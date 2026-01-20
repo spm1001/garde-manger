@@ -25,6 +25,14 @@ Initial public release.
 
 - Unified FTS5 schema to standalone mode (was causing index corruption with external content mode)
 
+### Migration
+
+If upgrading from an earlier version, rebuild your FTS index:
+
+```bash
+uv run mem rebuild-fts
+```
+
 ### Changed
 
 - Local SQLite is now the recommended path; Turso cloud sync marked as experimental due to FTS5 issues

@@ -168,7 +168,7 @@ CREATE TABLE IF NOT EXISTS summaries (
     source_id TEXT PRIMARY KEY REFERENCES sources(id),
     summary_text TEXT NOT NULL,
     raw_text TEXT,                        -- full conversation text (capped at 100K)
-    title TEXT,                           -- denormalized from sources for FTS
+    title TEXT,                           -- denormalized at insert; FTS triggers use JOIN to sources instead
     has_presummary BOOLEAN DEFAULT FALSE,
     word_count INTEGER,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
