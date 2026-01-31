@@ -2,17 +2,28 @@
 
 > For Claude Code agents working on this codebase. Humans can ignore this file.
 
-This project uses [beads](https://github.com/steveyegge/beads) (`bd` command) for issue tracking. Run `bd onboard` to get started.
+This project uses [arc](https://github.com/spm1001/arc) for work tracking. Arc organizes work as **Outcomes** (desired results) and **Actions** (concrete steps).
 
 ## Quick Reference
 
 ```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --status in_progress  # Claim work
-bd close <id>         # Complete work
-bd sync               # Sync with git
+arc list                # Hierarchical view of open work
+arc list --ready        # Actions with no waiting_for
+arc show <id>           # Full details including brief (why/what/done)
+arc new "title" --why W --what X --done D  # Create outcome
+arc done <id>           # Complete item
 ```
+
+## Draw-Down Pattern
+
+**Before starting work on an arc item:**
+
+1. `arc show <id>` — read the brief (why/what/done)
+2. Create TodoWrite items from `what` and `done` criteria
+3. Show user: "Breaking this down into: [list]. Sound right?"
+4. Work through with checkpoints
+
+**The test:** Could a Claude with zero context execute this from the brief alone?
 
 ## Landing the Plane (Session Completion)
 
@@ -20,13 +31,12 @@ bd sync               # Sync with git
 
 **MANDATORY WORKFLOW:**
 
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
+1. **File work for remaining items** - Create arc items with full briefs for anything that needs follow-up
 2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
+3. **Update work status** - `arc done <id>` for finished work
 4. **PUSH TO REMOTE** - This is MANDATORY:
    ```bash
    git pull --rebase
-   bd sync
    git push
    git status  # MUST show "up to date with origin"
    ```
@@ -39,4 +49,3 @@ bd sync               # Sync with git
 - NEVER stop before pushing - that leaves work stranded locally
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
-
