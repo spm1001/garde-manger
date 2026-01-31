@@ -27,7 +27,7 @@ Together they address the session-to-session continuity problem from different a
 1. **Search across past conversations** — Find that discussion about authentication patterns
 2. **Consistent terminology** — Your glossary maps aliases to canonical terms
 3. **Token efficiency** — Search summaries first, drill into full content only when needed
-4. **Cross-platform** — Works with Claude Code, Claude.ai exports, handoffs, and local markdown
+4. **Cross-platform** — Works with Claude Code, Claude.ai, handoffs, beads, arc, cloud sessions, and local markdown
 
 ## Quick Start
 
