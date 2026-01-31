@@ -104,9 +104,6 @@ Database:
     handoff: 213
     local_md: 2368
   Summaries indexed: 6237
-
-Sync:
-  Turso: disabled (local only)
 ```
 
 ```
@@ -143,8 +140,6 @@ See the `skill/` directory for the Claude Code skill.
 
 Config lives at `~/.claude/memory/config.yaml`. Created with defaults on first run.
 
-**Local SQLite is the recommended path.** No cloud account needed — just install and use. Turso cloud sync exists but has known issues with FTS5 index corruption and is disabled by default.
-
 ```yaml
 # Example: add local markdown sources
 sources:
@@ -152,9 +147,6 @@ sources:
     meeting_notes:
       path: ~/Documents/Meeting Notes
       pattern: "**/*.md"
-
-# Experimental: Turso cloud sync (has FTS5 issues, not recommended)
-# turso_enabled: true
 ```
 
 ### Source Types
@@ -194,15 +186,14 @@ Start small. Add entries as you encounter confusion in search results.
 
 ## Privacy & Data
 
-- **Local by default** — All data stays in `~/.claude/memory/memory.db`
+- **Local only** — All data stays in `~/.claude/memory/memory.db`
 - **LLM extraction** — `mem process` sends conversation text to Anthropic API for summarization
-- **Experimental cloud sync** — Turso sync exists but has FTS5 issues; disabled by default
 - **No telemetry** — This tool doesn't phone home
 
 ## Architecture
 
 - **Adapters** (`src/mem/adapters/`) — Parse each source format
-- **Database** (`src/mem/database.py`) — SQLite with FTS5, optional Turso sync
+- **Database** (`src/mem/database.py`) — SQLite with FTS5
 - **CLI** (`src/mem/cli.py`) — Click-based command interface
 - **Extraction** (`src/mem/extraction.py`) — Entity and summary extraction
 

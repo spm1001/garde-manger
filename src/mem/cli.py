@@ -1,13 +1,13 @@
 """Command-line interface for conversation memory system."""
 
-# Suppress libsql parser warnings (cosmetic - FTS5 syntax not fully recognized)
+# CLI entry point
 import os
 os.environ.setdefault('RUST_LOG', 'error,sqlite3Parser=off')
 
 import json
 import click
 
-from .config import load_config, get_memory_dir, is_turso_enabled
+from .config import load_config, get_memory_dir
 from .glossary import load_glossary
 from .database import get_database
 from .adapters.claude_code import discover_claude_code, ClaudeCodeSource
@@ -484,9 +484,6 @@ def _create_basic_summary(source: ClaudeCodeSource) -> str:
 @click.pass_context
 def status(ctx):
     """Show system status and statistics."""
-    from .database import get_turso_credentials, get_db_path
-    import os
-
     glossary = ctx.obj['glossary']
 
     click.echo(f"Memory dir: {get_memory_dir()}")
@@ -508,92 +505,7 @@ def status(ctx):
         click.echo(f"  Resolved: {stats.get('resolved_entities', 0)}")
         click.echo(f"  Pending: {stats.get('pending_entities', 0)}")
 
-    # Sync status
-    click.echo(f"\nSync:")
-    sync_url, auth_token = get_turso_credentials()
-    db_path = get_db_path()
 
-    if is_turso_enabled() and sync_url and auth_token:
-        # Extract host from URL for display
-        host = sync_url.replace("libsql://", "").split("/")[0] if sync_url else "unknown"
-        click.echo(f"  Turso: enabled ({host})")
-        click.echo(f"  Mode: {'offline' if db._offline_mode else 'online'}")
-
-        # Check for libsql info file (indicates embedded replica)
-        info_file = db_path.parent / (db_path.name + "-info")
-        if info_file.exists():
-            mtime = os.path.getmtime(info_file)
-            from datetime import datetime
-            last_sync = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
-            click.echo(f"  Last sync: {last_sync}")
-        else:
-            click.echo(f"  Last sync: unknown (no info file)")
-
-        # Decode JWT to show token info
-        try:
-            import base64
-            import json
-            payload = auth_token.split('.')[1]
-            payload += '=' * (4 - len(payload) % 4)
-            token_data = json.loads(base64.urlsafe_b64decode(payload))
-
-            from datetime import datetime
-            iat = token_data.get('iat')
-            exp = token_data.get('exp')
-
-            if iat:
-                issued = datetime.fromtimestamp(iat).strftime("%Y-%m-%d")
-                click.echo(f"  Token issued: {issued}")
-
-            if exp and exp != -1:
-                expiry = datetime.fromtimestamp(exp)
-                now = datetime.now()
-                if expiry < now:
-                    click.echo(f"  Token: ⚠️  EXPIRED on {expiry.strftime('%Y-%m-%d')}")
-                else:
-                    days_left = (expiry - now).days
-                    click.echo(f"  Token expires: {expiry.strftime('%Y-%m-%d')} ({days_left} days)")
-            else:
-                click.echo(f"  Token expires: never")
-        except Exception:
-            pass  # Silently skip if token parsing fails
-    else:
-        if sync_url and auth_token:
-            click.echo(f"  Turso: disabled (credentials available)")
-        else:
-            click.echo(f"  Turso: disabled (local only)")
-
-
-@main.command()
-@click.option('--status', 'show_status', is_flag=True, help='Show sync status (same as mem status)')
-@click.pass_context
-def sync(ctx, show_status):
-    """Force sync with Turso cloud database.
-
-    Without flags, forces an immediate sync.
-    With --status, shows sync configuration (same info as 'mem status').
-    """
-    from .database import get_turso_credentials
-
-    if show_status:
-        # Just invoke status command
-        ctx.invoke(status)
-        return
-
-    sync_url, auth_token = get_turso_credentials()
-    if not sync_url or not auth_token:
-        click.echo("Turso not configured. Set credentials first:")
-        click.echo("  macOS: security add-generic-password -s turso-claude-memory-url -w <URL>")
-        click.echo("  Linux: export TURSO_CLAUDE_MEMORY_URL=<URL>")
-        return
-
-    db = get_database()
-    with db:
-        try:
-            db.sync()
-            click.echo("✓ Synced with Turso")
-        except Exception as e:
-            click.echo(f"✗ Sync failed: {e}", err=True)
 
 
 @main.command('list')
@@ -1907,7 +1819,6 @@ def rebuild_fts(ctx):
     the summaries table. Use after schema changes or data corruption.
 
     This also ensures raw_text is indexed for full-text search.
-    Syncs to Turso after rebuild for multi-machine consistency.
     """
     db = get_database()
     conn = db.connect()
@@ -1969,8 +1880,6 @@ def rebuild_fts(ctx):
     """)
 
     conn.commit()
-    click.echo("Syncing to Turso...")
-    db.sync()
 
     click.echo(f"✅ FTS index rebuilt with {count} entries (including raw_text).")
 
@@ -2036,8 +1945,6 @@ def populate_raw_text(ctx, batch_size, limit):
 
     Faster than full scan - only updates summaries without raw_text,
     loading source content on demand.
-
-    Syncs to Turso after each batch to ensure multi-machine consistency.
     """
     from pathlib import Path
 
@@ -2130,8 +2037,7 @@ def populate_raw_text(ctx, batch_size, limit):
 
                 if updated % batch_size == 0:
                     conn.commit()
-                    db.sync()  # Sync after each batch for multi-machine consistency
-                    click.echo(f"  Synced {updated}/{total} ({100*updated//total}%)")
+                    click.echo(f"  Progress: {updated}/{total} ({100*updated//total}%)")
 
         except Exception as e:
             errors += 1
@@ -2139,7 +2045,6 @@ def populate_raw_text(ctx, batch_size, limit):
                 click.echo(f"  Error on {source_id}: {e}")
 
     conn.commit()
-    db.sync()  # Final sync to ensure all changes are durable
 
     click.echo(f"✅ Updated {updated} summaries with raw_text ({errors} errors)")
 
@@ -2356,226 +2261,6 @@ def store_extraction(ctx, source_id, model):
     learnings_count = len(data.get('learnings', []))
     click.echo(f"  {builds_count} builds, {learnings_count} learnings")
 
-
-@main.command('migrate-turso')
-@click.option('--dry-run', is_flag=True, help="Show what would be migrated without doing it")
-@click.option('--verbose', '-v', is_flag=True, help="Show SQL statements being executed")
-@click.pass_context
-def migrate_turso(ctx, dry_run, verbose):
-    """Migrate local memory.db to Turso cloud database.
-
-    This command:
-    1. Exports all data from local SQLite to Turso
-    2. Backs up the local database
-    3. Creates a fresh embedded replica that syncs with Turso
-
-    Requires Turso credentials in Keychain (macOS) or environment variables:
-    - TURSO_CLAUDE_MEMORY_URL
-    - TURSO_CLAUDE_MEMORY_TOKEN
-
-    Use --verbose to see SQL statements being executed (helpful for debugging).
-    """
-    from pathlib import Path
-    import shutil
-    from datetime import datetime
-    from .database import get_turso_credentials, get_db_path
-
-    # Check credentials
-    sync_url, auth_token = get_turso_credentials()
-    if not sync_url or not auth_token:
-        click.echo("Error: Turso credentials not found.", err=True)
-        click.echo("Set up credentials with:", err=True)
-        click.echo("  macOS: security add-generic-password -s turso-claude-memory-url -w <URL>", err=True)
-        click.echo("         security add-generic-password -s turso-claude-memory-token -w <TOKEN>", err=True)
-        click.echo("  Linux: export TURSO_CLAUDE_MEMORY_URL=<URL>", err=True)
-        click.echo("         export TURSO_CLAUDE_MEMORY_TOKEN=<TOKEN>", err=True)
-        raise SystemExit(1)
-
-    click.echo(f"Turso URL: {sync_url}")
-
-    db_path = get_db_path()
-    if not db_path.exists():
-        click.echo(f"No local database found at {db_path}", err=True)
-        raise SystemExit(1)
-
-    # Check if already migrated
-    metadata_path = Path(str(db_path) + "-sync-metadata")
-    if metadata_path.exists():
-        click.echo("Database already using Turso sync (metadata file exists).")
-        raise SystemExit(0)
-
-    # Count records to migrate
-    import sqlite3
-    local_conn = sqlite3.connect(db_path)
-    local_conn.row_factory = sqlite3.Row
-    counts = {
-        'sources': local_conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0],
-        'summaries': local_conn.execute("SELECT COUNT(*) FROM summaries").fetchone()[0],
-        'extractions': local_conn.execute("SELECT COUNT(*) FROM extractions").fetchone()[0],
-        'source_entities': local_conn.execute("SELECT COUNT(*) FROM source_entities").fetchone()[0],
-        'pending_entities': local_conn.execute("SELECT COUNT(*) FROM pending_entities").fetchone()[0],
-        'file_mentions': local_conn.execute("SELECT COUNT(*) FROM file_mentions").fetchone()[0],
-    }
-
-    click.echo(f"\nRecords to migrate:")
-    for table, count in counts.items():
-        click.echo(f"  {table}: {count}")
-
-    if dry_run:
-        click.echo("\n[DRY RUN] Would migrate to Turso and backup local database")
-        local_conn.close()
-        return
-
-    # Confirm
-    if not click.confirm("\nProceed with migration?"):
-        click.echo("Aborted.")
-        local_conn.close()
-        return
-
-    # Connect to Turso (remote only, no local file)
-    try:
-        import libsql
-    except ImportError:
-        click.echo("Error: libsql package required. Install with: uv add libsql", err=True)
-        raise SystemExit(1)
-
-    click.echo("\nConnecting to Turso...")
-    remote_conn = libsql.connect(sync_url, auth_token=auth_token)
-
-    # Create schema on remote
-    from .database import SCHEMA
-    click.echo("Creating schema on Turso...")
-
-    schema_errors = []
-    for statement in SCHEMA.split(';'):
-        statement = statement.strip()
-        if not statement or statement.startswith('--'):
-            continue
-
-        if verbose:
-            # Show first 80 chars of statement
-            preview = statement[:80].replace('\n', ' ')
-            click.echo(f"  SQL: {preview}...")
-
-        try:
-            remote_conn.execute(statement)
-        except Exception as e:
-            err_str = str(e).lower()
-            # "already exists" is OK, other errors are real problems
-            if 'already exists' in err_str or 'table summaries_fts already exists' in err_str:
-                if verbose:
-                    click.echo(f"    (already exists, skipping)")
-            else:
-                schema_errors.append((statement[:50], str(e)))
-                if verbose:
-                    click.echo(f"    ⚠️  Error: {e}")
-
-    remote_conn.commit()
-
-    if schema_errors:
-        click.echo(f"\n⚠️  {len(schema_errors)} schema creation errors:", err=True)
-        for stmt, err in schema_errors[:5]:  # Show first 5
-            click.echo(f"  {stmt}... → {err}", err=True)
-        if len(schema_errors) > 5:
-            click.echo(f"  ... and {len(schema_errors) - 5} more", err=True)
-        if not click.confirm("\nContinue despite schema errors?"):
-            click.echo("Aborted. Fix schema errors and retry.")
-            raise SystemExit(1)
-
-    # Verify required tables exist before migrating
-    click.echo("Verifying tables...")
-    required_tables = ['sources', 'summaries', 'extractions', 'source_entities', 'pending_entities', 'file_mentions']
-    existing_tables = set()
-    for row in remote_conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall():
-        existing_tables.add(row[0])
-
-    missing = [t for t in required_tables if t not in existing_tables]
-    if missing:
-        click.echo(f"❌ Missing required tables: {', '.join(missing)}", err=True)
-        click.echo("Schema creation may have failed. Run with --verbose to debug.", err=True)
-        raise SystemExit(1)
-
-    click.echo(f"  ✓ All {len(required_tables)} tables present")
-
-    # Migrate each table
-    tables_to_migrate = [
-        ('sources', 'SELECT * FROM sources'),
-        ('summaries', 'SELECT * FROM summaries'),
-        ('extractions', 'SELECT * FROM extractions'),
-        ('source_entities', 'SELECT * FROM source_entities'),
-        ('pending_entities', 'SELECT * FROM pending_entities'),
-        ('file_mentions', 'SELECT * FROM file_mentions'),
-    ]
-
-    for table_name, query in tables_to_migrate:
-        click.echo(f"Migrating {table_name}...")
-        rows = local_conn.execute(query).fetchall()
-        if not rows:
-            continue
-
-        # Get column names
-        columns = [desc[0] for desc in local_conn.execute(query).description]
-        placeholders = ','.join(['?' for _ in columns])
-        insert_sql = f"INSERT OR REPLACE INTO {table_name} ({','.join(columns)}) VALUES ({placeholders})"
-
-        # Insert in batches
-        batch_size = 100
-        for i in range(0, len(rows), batch_size):
-            batch = rows[i:i+batch_size]
-            for row in batch:
-                remote_conn.execute(insert_sql, tuple(row))
-            remote_conn.commit()
-            click.echo(f"  {min(i+batch_size, len(rows))}/{len(rows)}")
-
-    # Rebuild FTS indexes on remote
-    click.echo("Rebuilding FTS indexes on Turso...")
-    # Clear and rebuild summaries_fts
-    remote_conn.execute("DELETE FROM summaries_fts")
-    remote_conn.execute("""
-        INSERT INTO summaries_fts(rowid, source_id, title, summary_text, raw_text)
-        SELECT s.rowid, s.source_id, src.title, s.summary_text, s.raw_text
-        FROM summaries s
-        JOIN sources src ON s.source_id = src.id
-    """)
-    # Clear and rebuild files_fts
-    remote_conn.execute("DELETE FROM files_fts")
-    remote_conn.execute("""
-        INSERT INTO files_fts(rowid, file_path)
-        SELECT id, file_path FROM file_mentions
-    """)
-    remote_conn.commit()
-    remote_conn.close()
-
-    click.echo("Data migrated to Turso.")
-
-    # Backup local database
-    backup_name = f"memory.db.backup-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-    backup_path = db_path.parent / backup_name
-    click.echo(f"\nBacking up local database to {backup_path}...")
-    local_conn.close()
-    shutil.move(db_path, backup_path)
-
-    # Create fresh embedded replica
-    click.echo("Creating embedded replica...")
-    replica_conn = libsql.connect(
-        str(db_path),
-        sync_url=sync_url,
-        auth_token=auth_token,
-    )
-    replica_conn.sync()
-    replica_conn.close()
-
-    # Verify
-    click.echo("\nVerifying migration...")
-    from .database import Database
-    db = Database(use_turso=True)
-    with db:
-        stats = db.get_stats()
-        click.echo(f"  Sources: {stats['total_sources']}")
-        click.echo(f"  Summaries: {stats['summaries']}")
-
-    click.echo("\n✅ Migration complete! Memory now syncs to Turso.")
-    click.echo(f"   Backup saved to: {backup_path}")
 
 
 @main.command()

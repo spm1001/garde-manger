@@ -6,142 +6,16 @@ Schema includes:
 - summaries_fts: FTS5 virtual table for full-text search
 - source_entities: entity mentions per source
 - pending_entities: entities awaiting resolution
-
-Supports both local SQLite and Turso (libsql) for multi-machine sync.
 """
 
 import sqlite3
 import json
-import os
-import subprocess
 from pathlib import Path
 from datetime import datetime
-from typing import Any, Iterator
+from typing import Any
 from dataclasses import dataclass
 
-from .config import get_db_path, is_turso_enabled
-
-
-# --- Turso/libsql support ---
-
-def _get_keychain_value(service: str) -> str | None:
-    """Get a value from macOS Keychain."""
-    try:
-        result = subprocess.run(
-            ["security", "find-generic-password", "-s", service, "-w"],
-            capture_output=True, text=True
-        )
-        if result.returncode == 0:
-            return result.stdout.strip()
-    except FileNotFoundError:
-        pass  # Not on macOS
-    return None
-
-
-def get_turso_credentials() -> tuple[str | None, str | None]:
-    """Get Turso credentials from Keychain (macOS) or environment.
-
-    Returns (sync_url, auth_token) or (None, None) if not configured.
-    """
-    # Try Keychain first (macOS)
-    sync_url = _get_keychain_value("turso-claude-memory-url")
-    auth_token = _get_keychain_value("turso-claude-memory-token")
-
-    # Fall back to environment variables
-    if not sync_url:
-        sync_url = os.environ.get("TURSO_CLAUDE_MEMORY_URL")
-    if not auth_token:
-        auth_token = os.environ.get("TURSO_CLAUDE_MEMORY_TOKEN")
-
-    return sync_url, auth_token
-
-
-class DictRow:
-    """Row wrapper that provides dict-like access to tuple data.
-
-    libsql returns plain tuples without row_factory support.
-    This wrapper uses cursor.description to map column names.
-    """
-
-    def __init__(self, cursor_description, row_tuple):
-        self._columns = [col[0] for col in cursor_description]
-        self._data = row_tuple
-        self._dict = dict(zip(self._columns, row_tuple))
-
-    def __getitem__(self, key):
-        if isinstance(key, int):
-            return self._data[key]
-        return self._dict[key]
-
-    def __iter__(self):
-        return iter(self._data)
-
-    def __len__(self):
-        return len(self._data)
-
-    def keys(self):
-        return self._columns
-
-    def values(self):
-        return self._data
-
-    def items(self):
-        return self._dict.items()
-
-
-def _wrap_cursor_results(cursor, rows):
-    """Wrap cursor results with DictRow for dict-like access."""
-    if not rows or not cursor.description:
-        return rows
-    return [DictRow(cursor.description, row) for row in rows]
-
-
-def _split_sql_statements(schema: str) -> list[str]:
-    """Split SQL schema into statements, respecting BEGIN...END blocks.
-
-    Naive ';' splitting breaks triggers like:
-        CREATE TRIGGER ... BEGIN
-            INSERT INTO ...;
-        END;
-
-    This function tracks BEGIN/END depth to keep triggers intact.
-    """
-    statements = []
-    current = []
-    depth = 0  # Track BEGIN...END nesting
-
-    for line in schema.split('\n'):
-        stripped = line.strip()
-
-        # Skip pure comment lines
-        if stripped.startswith('--'):
-            continue
-
-        # Remove inline comments for keyword detection
-        code = stripped.split('--')[0].strip().upper()
-
-        # Track BEGIN...END blocks
-        if ' BEGIN' in code or code == 'BEGIN':
-            depth += 1
-        if code.endswith('END') or code.endswith('END;'):
-            depth = max(0, depth - 1)
-
-        current.append(line)
-
-        # Only split on ; when outside BEGIN...END blocks
-        if stripped.endswith(';') and depth == 0:
-            statement = '\n'.join(current).strip()
-            if statement and not statement.startswith('--'):
-                statements.append(statement)
-            current = []
-
-    # Handle any remaining content
-    if current:
-        statement = '\n'.join(current).strip()
-        if statement and not statement.startswith('--'):
-            statements.append(statement)
-
-    return statements
+from .config import get_db_path
 
 
 SCHEMA = """
@@ -175,10 +49,6 @@ CREATE TABLE IF NOT EXISTS summaries (
 );
 
 -- Full-text search index (standalone mode - triggers keep it in sync)
--- Note: NOT using external content mode (content='summaries') because:
--- 1. FTS5 needs title column which lives in sources, not summaries
--- 2. Triggers insert data including title via JOIN
--- 3. Standalone mode avoids the schema mismatch that caused corruption
 CREATE VIRTUAL TABLE IF NOT EXISTS summaries_fts USING fts5(
     source_id,
     title,
@@ -291,137 +161,44 @@ class SearchResult:
 
 
 class Database:
-    """SQLite database connection and operations.
+    """SQLite database connection and operations."""
 
-    Supports two modes:
-    - Local SQLite (default): Uses sqlite3 with memory.db
-    - Turso sync: Uses libsql embedded replica that syncs to Turso cloud
-
-    Mode is determined by turso_enabled config setting (default: false).
-    """
-
-    def __init__(self, db_path: Path | None = None, use_turso: bool | None = None):
+    def __init__(self, db_path: Path | None = None):
         """Initialize database.
 
         Args:
             db_path: Path to local database file
-            use_turso: Force Turso mode (True), local mode (False), or auto-detect (None)
         """
         self.db_path = db_path or get_db_path()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = None
-        self._use_libsql = False  # Track which driver we're using
-        self._offline_mode = False  # True if Turso unreachable
-
-        # Determine if we should use Turso
-        if use_turso is None:
-            # Check config first - Turso is opt-in, not auto-detected
-            if is_turso_enabled():
-                sync_url, auth_token = get_turso_credentials()
-                self._turso_url = sync_url
-                self._turso_token = auth_token
-                self._use_turso = bool(sync_url and auth_token)
-            else:
-                # Local SQLite mode (default)
-                self._turso_url = self._turso_token = None
-                self._use_turso = False
-        else:
-            self._use_turso = use_turso
-            if use_turso:
-                self._turso_url, self._turso_token = get_turso_credentials()
-            else:
-                self._turso_url = self._turso_token = None
 
     def connect(self):
         """Get or create database connection."""
         if self._conn is None:
-            if self._use_turso and self._turso_url and self._turso_token:
-                self._conn = self._connect_turso()
-                self._use_libsql = True
-            else:
-                self._conn = self._connect_sqlite()
-                self._use_libsql = False
+            self._conn = sqlite3.connect(self.db_path)
+            self._conn.row_factory = sqlite3.Row
             self._init_schema()
         return self._conn
 
-    def _connect_sqlite(self):
-        """Connect using standard sqlite3."""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        return conn
-
-    def _connect_turso(self):
-        """Connect using libsql with Turso embedded replica."""
-        try:
-            import libsql
-        except ImportError:
-            raise ImportError(
-                "libsql package required for Turso sync. Install with: uv add libsql"
-            )
-
-        # Check if local file exists but wasn't created with libsql
-        # libsql creates a -info file alongside the db for sync state
-        info_path = Path(str(self.db_path) + "-info")
-        if self.db_path.exists() and not info_path.exists():
-            raise RuntimeError(
-                f"Database exists at {self.db_path} but was not created with libsql. "
-                f"To migrate to Turso, run: uv run mem migrate-turso"
-            )
-
-        # Embedded replica: local file syncs with remote Turso
-        conn = libsql.connect(
-            str(self.db_path),
-            sync_url=self._turso_url,
-            auth_token=self._turso_token,
-        )
-        # Initial sync to get remote state (graceful if offline)
-        try:
-            conn.sync()
-        except Exception as e:
-            import sys
-            print(f"⚠️  Turso sync failed (working offline): {e}", file=sys.stderr)
-            self._offline_mode = True
-        return conn
-
-    def sync(self):
-        """Sync local replica with Turso (no-op for sqlite3 mode or offline)."""
-        if self._use_libsql and self._conn and not getattr(self, '_offline_mode', False):
-            try:
-                self._conn.sync()
-            except Exception as e:
-                import sys
-                print(f"⚠️  Turso sync failed: {e}", file=sys.stderr)
-
     def _init_schema(self):
         """Initialize database schema."""
-        if self._use_libsql:
-            # libsql doesn't support executescript, run statements individually
-            # Use smart splitting that respects BEGIN...END blocks (for triggers)
-            for statement in _split_sql_statements(SCHEMA):
-                try:
-                    self._conn.execute(statement)
-                except Exception:
-                    pass  # Ignore errors (table/trigger already exists)
-        else:
-            # sqlite3 executescript handles triggers and comments correctly
-            self._conn.executescript(SCHEMA)
+        self._conn.executescript(SCHEMA)
         self._migrate_schema()
         self._conn.commit()
-        if self._use_libsql:
-            self._conn.sync()
 
     def _migrate_schema(self):
         """Apply any pending migrations to existing database."""
         # Migration 1: Add metadata column to sources table
         try:
             self._conn.execute("ALTER TABLE sources ADD COLUMN metadata TEXT")
-        except (sqlite3.OperationalError, Exception):
+        except sqlite3.OperationalError:
             pass  # Column already exists
 
         # Migration 2: Add raw_text column to summaries table
         try:
             self._conn.execute("ALTER TABLE summaries ADD COLUMN raw_text TEXT")
-        except (sqlite3.OperationalError, Exception):
+        except sqlite3.OperationalError:
             pass  # Column already exists
 
         # Migration 3: Fix FTS5 triggers for standalone mode
@@ -450,30 +227,14 @@ class Database:
                         WHERE s.source_id = NEW.source_id;
                     END
                 """)
-        except (sqlite3.OperationalError, Exception):
+        except sqlite3.OperationalError:
             pass  # Triggers don't exist or migration already done
 
     def close(self):
         """Close database connection."""
         if self._conn:
-            if self._use_libsql:
-                self._conn.sync()  # Final sync before close
             self._conn.close()
             self._conn = None
-
-    def _fetchall(self, cursor) -> list:
-        """Fetch all results, wrapping with DictRow for libsql."""
-        rows = cursor.fetchall()
-        if self._use_libsql:
-            return _wrap_cursor_results(cursor, rows)
-        return rows
-
-    def _fetchone(self, cursor):
-        """Fetch one result, wrapping with DictRow for libsql."""
-        row = cursor.fetchone()
-        if self._use_libsql and row and cursor.description:
-            return DictRow(cursor.description, row)
-        return row
 
     def __enter__(self):
         self.connect()
@@ -528,7 +289,7 @@ class Database:
         """Get source by ID."""
         conn = self.connect()
         cursor = conn.execute("SELECT * FROM sources WHERE id = ?", (source_id,))
-        row = self._fetchone(cursor)
+        row = cursor.fetchone()
         return dict(row) if row else None
 
     def list_sources(
@@ -553,8 +314,7 @@ class Database:
         params.append(limit)
 
         cursor = conn.execute(query, params)
-        rows = self._fetchall(cursor)
-        return [dict(row) for row in rows]
+        return [dict(row) for row in cursor.fetchall()]
 
     def mark_processed(self, source_id: str) -> None:
         """Mark a source as processed."""
@@ -570,8 +330,7 @@ class Database:
         """Check if source already exists."""
         conn = self.connect()
         cursor = conn.execute("SELECT 1 FROM sources WHERE id = ?", (source_id,))
-        row = self._fetchone(cursor)
-        return row is not None
+        return cursor.fetchone() is not None
 
     # Summary operations
 
@@ -601,7 +360,6 @@ class Database:
         if title is None:
             row = conn.execute("SELECT title FROM sources WHERE id = ?", (source_id,)).fetchone()
             title = row[0] if row else None
-        # Use UPSERT pattern (content= FTS mode doesn't need trigger workarounds)
         conn.execute("""
             INSERT INTO summaries (source_id, summary_text, has_presummary, word_count, raw_text, title)
             VALUES (?, ?, ?, ?, ?, ?)
@@ -659,7 +417,6 @@ class Database:
         ))
 
         # Update summaries table with extraction summary for FTS indexing
-        # The existing UPDATE trigger will sync the FTS index automatically
         if summary:
             conn.execute("""
                 UPDATE summaries SET summary_text = ?
@@ -675,7 +432,7 @@ class Database:
             "SELECT * FROM extractions WHERE source_id = ?",
             (source_id,)
         )
-        row = self._fetchone(cursor)
+        row = cursor.fetchone()
         if not row:
             return None
         return {
@@ -698,8 +455,7 @@ class Database:
             "SELECT 1 FROM extractions WHERE source_id = ?",
             (source_id,)
         )
-        row = self._fetchone(cursor)
-        return row is not None
+        return cursor.fetchone() is not None
 
     # Search operations
 
@@ -724,7 +480,6 @@ class Database:
         from datetime import datetime, timezone
 
         conn = self.connect()
-        self.sync()  # Pull latest from other sessions/machines
 
         # FTS5 search - join with sources for metadata
         sql = """
@@ -757,7 +512,7 @@ class Database:
         params.append(fetch_limit)
 
         cursor = conn.execute(sql, params)
-        rows = self._fetchall(cursor)
+        rows = cursor.fetchall()
 
         results = [
             SearchResult(
@@ -840,8 +595,7 @@ class Database:
             ORDER BY pe.confidence DESC, pe.created_at ASC
             LIMIT ?
         """, (status, limit))
-        rows = self._fetchall(cursor)
-        return [dict(row) for row in rows]
+        return [dict(row) for row in cursor.fetchall()]
 
     def resolve_pending_entity(
         self,
@@ -873,8 +627,7 @@ class Database:
             WHERE source_id = ?
             ORDER BY confidence DESC
         """, (source_id,))
-        rows = self._fetchall(cursor)
-        return [dict(row) for row in rows]
+        return [dict(row) for row in cursor.fetchall()]
 
     # File mention operations
 
@@ -944,9 +697,8 @@ class Database:
             ORDER BY src.created_at DESC
             LIMIT ?
         """, (query, limit))
-        rows = self._fetchall(cursor)
 
-        return [dict(row) for row in rows]
+        return [dict(row) for row in cursor.fetchall()]
 
     def get_files_for_source(self, source_id: str) -> list[dict]:
         """Get all file mentions for a source."""
@@ -957,8 +709,7 @@ class Database:
             WHERE source_id = ?
             ORDER BY file_path
         """, (source_id,))
-        rows = self._fetchall(cursor)
-        return [dict(row) for row in rows]
+        return [dict(row) for row in cursor.fetchall()]
 
     # Stats
 
@@ -967,32 +718,32 @@ class Database:
         conn = self.connect()
 
         cursor = conn.execute("SELECT COUNT(*) FROM sources")
-        total = self._fetchone(cursor)[0]
+        total = cursor.fetchone()[0]
 
         cursor = conn.execute("""
             SELECT source_type, COUNT(*) as count
             FROM sources GROUP BY source_type
         """)
-        by_type = self._fetchall(cursor)
+        by_type = cursor.fetchall()
 
         cursor = conn.execute("""
             SELECT status, COUNT(*) as count
             FROM sources GROUP BY status
         """)
-        by_status = self._fetchall(cursor)
+        by_status = cursor.fetchall()
 
         cursor = conn.execute("SELECT COUNT(*) FROM summaries")
-        summaries = self._fetchone(cursor)[0]
+        summaries = cursor.fetchone()[0]
 
         cursor = conn.execute(
             "SELECT COUNT(*) FROM pending_entities WHERE status = 'pending'"
         )
-        pending = self._fetchone(cursor)[0]
+        pending = cursor.fetchone()[0]
 
         cursor = conn.execute(
             "SELECT COUNT(DISTINCT entity_id) FROM source_entities"
         )
-        resolved_entities = self._fetchone(cursor)[0]
+        resolved_entities = cursor.fetchone()[0]
 
         return {
             'total_sources': total,

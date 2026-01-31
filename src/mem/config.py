@@ -32,8 +32,6 @@ def get_db_path() -> Path:
 
 
 DEFAULT_CONFIG = {
-    # Turso cloud sync - disabled by default, enable for multi-machine sync
-    'turso_enabled': False,
     'sources': {
         'claude_ai': {
             'path': '~/.claude/claude-ai/cache/conversations',
@@ -131,19 +129,3 @@ def _deep_merge(base: dict, override: dict) -> dict:
     return result
 
 
-def is_turso_enabled() -> bool:
-    """Check if Turso sync is enabled in config.
-
-    Returns False by default. Users must explicitly enable Turso
-    by setting turso_enabled: true in config.yaml.
-    """
-    config_path = get_config_path()
-    if not config_path.exists():
-        return False
-
-    try:
-        with open(config_path) as f:
-            config = yaml.safe_load(f) or {}
-        return config.get('turso_enabled', False)
-    except Exception:
-        return False

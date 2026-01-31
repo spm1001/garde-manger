@@ -24,7 +24,7 @@ def mock_glossary():
 @pytest.fixture
 def mock_db(tmp_path):
     """Create a test database."""
-    db = Database(tmp_path / "test.db", use_turso=False)
+    db = Database(tmp_path / "test.db")
     db.connect()
     return db
 

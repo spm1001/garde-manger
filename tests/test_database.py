@@ -14,7 +14,7 @@ def temp_db():
     """Create a temporary database."""
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = Path(tmpdir) / 'test.db'
-        db = Database(db_path, use_turso=False)
+        db = Database(db_path)
         with db:
             yield db
 
