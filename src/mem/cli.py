@@ -1042,7 +1042,7 @@ def drill(ctx, source_id, full, outline, turn):
         if extraction.get('open_threads'):
             click.echo(f"\nOpen threads: {len(extraction['open_threads'])}")
 
-        click.echo(f"\n[Extracted with {extraction.get('model_used', 'unknown')} at {extraction.get('extracted_at', 'unknown')[:10]}]")
+        click.echo(f"\n[Extracted with {extraction.get('model_used', 'unknown')} at {(extraction.get('extracted_at') or 'unknown')[:10]}]")
     elif not full:
         # Fallback to raw summary
         with db:
@@ -2044,6 +2044,7 @@ def populate_raw_text(ctx, batch_size, limit):
 
     updated = 0
     errors = 0
+    config = ctx.obj or load_config()
 
     for i, row in enumerate(missing):
         source_id = row[0]
@@ -2059,9 +2060,16 @@ def populate_raw_text(ctx, batch_size, limit):
                 source = ClaudeCodeSource.from_file(p)
                 raw_text = source.full_text()
 
-            elif source_type == 'claude_ai' and p and p.exists():
-                source = ClaudeAISource.from_file(p)
-                raw_text = source.full_text()
+            elif source_type == 'claude_ai' and path and path.startswith('claude_ai:'):
+                # Resolve virtual claude_ai:{uuid} path to actual file
+                uuid = path.split(':', 1)[1]
+                ai_base = config.get('sources', {}).get('claude_ai', {}).get(
+                    'path', '~/.claude/claude-ai/cache/conversations'
+                )
+                actual_path = Path(ai_base).expanduser() / f"{uuid}.json"
+                if actual_path.exists():
+                    source = ClaudeAISource.from_file(actual_path)
+                    raw_text = source.full_text()
 
             elif source_type == 'handoff' and p and p.exists():
                 source = HandoffSource.from_file(p)
