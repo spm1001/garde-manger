@@ -2,9 +2,29 @@
 
 import json
 import os
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 import anthropic
+
+
+@dataclass
+class MessageData:
+    """Message metadata for semantic chunking.
+
+    Captures structural information needed to detect topic boundaries:
+    - Timestamp for detecting time gaps
+    - Role to identify user returns after assistant runs
+    - Character offsets for mapping back to full_text positions
+    - Tool markers for identifying tool sequence boundaries
+    """
+    timestamp: datetime
+    role: str  # 'user' or 'assistant'
+    char_offset: int  # Position in full_text string
+    char_length: int
+    is_tool_result: bool = False
+    has_tool_use: bool = False
 
 # Default model for entity extraction (fast, cheap)
 DEFAULT_MODEL = "claude-3-5-haiku-20241022"
@@ -198,6 +218,249 @@ def confidence_to_float(confidence: str) -> float:
     }.get(confidence.lower(), 0.5)
 
 
+# Topic boundary detection patterns
+TOPIC_MARKER_PATTERNS = [
+    r'(?i)let\'s move on',
+    r'(?i)new topic:',
+    r'(?i)moving on to',
+    r'(?i)switching to',
+    r'^---+$',  # Horizontal rule
+    r'(?i)^#+\s',  # Markdown headers
+]
+
+import re
+TOPIC_MARKERS = [re.compile(p, re.MULTILINE) for p in TOPIC_MARKER_PATTERNS]
+
+
+def detect_topic_boundaries(
+    messages: list[MessageData],
+    content: str,
+    timestamp_gap_seconds: int = 300,
+) -> list[int]:
+    """Detect topic boundaries in a conversation.
+
+    Uses weighted signals to identify where topics change:
+    - Timestamp gap >5min: weight 1.0 (strong signal)
+    - User message after 3+ assistant messages: weight 0.5 (new question)
+    - Tool sequence boundary (assistant without tools after tools): weight 0.3
+    - Explicit markers ("let's move on", "---", headers): weight 0.2
+
+    Args:
+        messages: List of MessageData with timestamps and roles
+        content: Full text content (for marker detection)
+        timestamp_gap_seconds: Threshold for time gap signal (default 300 = 5min)
+
+    Returns:
+        List of message indices where boundaries occur (boundary is BEFORE that message)
+    """
+    if len(messages) < 2:
+        return []
+
+    boundaries = []
+
+    # Track consecutive assistant messages for "user return" detection
+    consecutive_assistant = 0
+    # Track whether previous assistant used tools
+    prev_assistant_had_tools = False
+
+    for i in range(1, len(messages)):
+        msg = messages[i]
+        prev = messages[i - 1]
+
+        boundary_score = 0.0
+
+        # Signal 1: Timestamp gap > threshold
+        if msg.timestamp and prev.timestamp:
+            gap = (msg.timestamp - prev.timestamp).total_seconds()
+            if gap > timestamp_gap_seconds:
+                boundary_score += 1.0
+
+        # Signal 2: User message after 3+ consecutive assistant messages
+        if msg.role == 'user' and consecutive_assistant >= 3:
+            boundary_score += 0.5
+
+        # Signal 3: Tool sequence boundary
+        # (assistant without tools following assistant with tools)
+        if msg.role == 'assistant' and prev.role == 'assistant':
+            if prev_assistant_had_tools and not msg.has_tool_use:
+                boundary_score += 0.3
+
+        # Signal 4: Explicit markers in message content
+        msg_content = content[msg.char_offset:msg.char_offset + msg.char_length]
+        for pattern in TOPIC_MARKERS:
+            if pattern.search(msg_content):
+                boundary_score += 0.2
+                break  # Only count once per message
+
+        # Update tracking state
+        if msg.role == 'assistant':
+            consecutive_assistant += 1
+            prev_assistant_had_tools = msg.has_tool_use
+        else:
+            consecutive_assistant = 0
+            prev_assistant_had_tools = False
+
+        # Threshold: score >= 0.5 marks boundary
+        if boundary_score >= 0.5:
+            boundaries.append(i)
+
+    return boundaries
+
+
+# Default semantic chunk sizes
+DEFAULT_SEMANTIC_MIN = 15_000     # Merge smaller chunks with neighbors
+DEFAULT_SEMANTIC_MAX = 80_000     # Split larger chunks at paragraph breaks
+DEFAULT_SEMANTIC_TARGET = 40_000  # Preferred single-topic chunk size
+
+
+def _split_at_paragraphs(content: str, target: int, max_size: int) -> list[str]:
+    """Split content at paragraph breaks, targeting chunks near target size.
+
+    Args:
+        content: Text to split
+        target: Target chunk size (split near this point)
+        max_size: Maximum chunk size (hard limit)
+
+    Returns:
+        List of content chunks
+    """
+    if len(content) <= max_size:
+        return [content]
+
+    chunks = []
+    remaining = content
+
+    while len(remaining) > max_size:
+        # Find paragraph break nearest to target
+        search_start = max(0, target - 5000)
+        search_end = min(len(remaining), target + 5000)
+
+        # Look for \n\n in the search window
+        best_break = -1
+        search_region = remaining[search_start:search_end]
+
+        # Find break closest to target
+        pos = 0
+        while True:
+            idx = search_region.find('\n\n', pos)
+            if idx == -1:
+                break
+            actual_pos = search_start + idx
+            if best_break == -1 or abs(actual_pos - target) < abs(best_break - target):
+                best_break = actual_pos
+            pos = idx + 1
+
+        if best_break == -1:
+            # No paragraph break found - split at max_size
+            best_break = max_size
+
+        chunks.append(remaining[:best_break])
+        remaining = remaining[best_break:].lstrip('\n')
+
+    if remaining:
+        chunks.append(remaining)
+
+    return chunks
+
+
+def split_semantic(
+    content: str,
+    messages: list[MessageData],
+    min_size: int = DEFAULT_SEMANTIC_MIN,
+    max_size: int = DEFAULT_SEMANTIC_MAX,
+    target_size: int = DEFAULT_SEMANTIC_TARGET,
+) -> list[str]:
+    """Split content into semantic chunks based on topic boundaries.
+
+    Algorithm:
+    1. Detect topic boundaries using message structure
+    2. Split content at boundary points
+    3. Merge chunks smaller than min_size with neighbors
+    4. Split chunks larger than max_size at paragraph breaks
+
+    Args:
+        content: Full conversation text
+        messages: List of MessageData for boundary detection
+        min_size: Minimum chunk size (merge smaller)
+        max_size: Maximum chunk size (split larger)
+        target_size: Target size for splitting large chunks
+
+    Returns:
+        List of content chunks
+    """
+    # Edge case: no messages or single chunk fits
+    if not messages:
+        return _split_at_paragraphs(content, target_size, max_size)
+
+    if len(content) <= max_size:
+        # Check if any boundaries exist
+        boundaries = detect_topic_boundaries(messages, content)
+        if not boundaries:
+            return [content]
+
+    # Step 1: Detect boundaries
+    boundaries = detect_topic_boundaries(messages, content)
+
+    if not boundaries:
+        # No topic boundaries - treat as one coherent thread
+        return _split_at_paragraphs(content, target_size, max_size)
+
+    # Step 2: Split at boundary points (using message char_offset)
+    segments = []
+    prev_offset = 0
+
+    for boundary_idx in boundaries:
+        msg = messages[boundary_idx]
+        # Split just before this message
+        segment = content[prev_offset:msg.char_offset].rstrip()
+        if segment:
+            segments.append(segment)
+        prev_offset = msg.char_offset
+
+    # Add final segment
+    final = content[prev_offset:].rstrip()
+    if final:
+        segments.append(final)
+
+    # Step 3: Merge small chunks with neighbors
+    merged = []
+    current = ""
+
+    for segment in segments:
+        if not current:
+            current = segment
+        elif len(current) + len(segment) + 2 < min_size:
+            # Merge with current
+            current = current + "\n\n" + segment
+        else:
+            # Current is big enough, start new
+            if current:
+                merged.append(current)
+            current = segment
+
+    if current:
+        merged.append(current)
+
+    # Check if we only have one merged chunk that's still small
+    if len(merged) == 1 and len(merged[0]) < min_size:
+        # That's fine - small sessions stay as one chunk
+        pass
+    # Re-merge if final chunk is too small
+    elif len(merged) > 1 and len(merged[-1]) < min_size:
+        last = merged.pop()
+        merged[-1] = merged[-1] + "\n\n" + last
+
+    # Step 4: Split large chunks at paragraph breaks
+    final_chunks = []
+    for chunk in merged:
+        if len(chunk) > max_size:
+            final_chunks.extend(_split_at_paragraphs(chunk, target_size, max_size))
+        else:
+            final_chunks.append(chunk)
+
+    return final_chunks
+
+
 # Default chunk size for large sessions (chars, not tokens)
 # These can be overridden via config.yaml processing.chunk_size/chunk_overlap
 DEFAULT_CHUNK_SIZE = 140_000
@@ -386,24 +649,33 @@ def _merge_chunk_results(
 
 def extract_hybrid(
     content: str,
+    messages: list[MessageData] | None = None,
     model: str = HYBRID_MODEL,
     max_content_chars: int = 140000,
     chunk_size: int | None = None,
     chunk_overlap: int | None = None,
+    semantic_min: int | None = None,
+    semantic_max: int | None = None,
+    semantic_target: int | None = None,
 ) -> dict[str, Any]:
     """Extract structured digest from conversation using hybrid prompt.
 
     For content exceeding max_content_chars, uses chunking:
-    1. Split into overlapping chunks
-    2. Extract from each chunk
-    3. Merge results with deduplication
+    1. If messages provided: semantic chunking at topic boundaries
+    2. Otherwise: fixed-size overlapping chunks (backward compat)
+    3. Extract from each chunk
+    4. Merge results with deduplication
 
     Args:
         content: Full conversation text
+        messages: Optional list of MessageData for semantic chunking
         model: Model to use for extraction
         max_content_chars: Threshold for triggering chunking
-        chunk_size: Override default chunk size (from config or DEFAULT_CHUNK_SIZE)
-        chunk_overlap: Override default overlap (from config or DEFAULT_CHUNK_OVERLAP)
+        chunk_size: Override default chunk size (for fixed-size chunking)
+        chunk_overlap: Override default overlap (for fixed-size chunking)
+        semantic_min: Min chunk size for semantic chunking (default 15K)
+        semantic_max: Max chunk size for semantic chunking (default 80K)
+        semantic_target: Target chunk size for semantic chunking (default 40K)
 
     Returns dict with keys:
         - summary: str
@@ -418,13 +690,30 @@ def extract_hybrid(
     """
     client = get_client()
 
-    # Use provided values or fall back to defaults
+    # Semantic chunking settings
+    actual_semantic_min = semantic_min or DEFAULT_SEMANTIC_MIN
+    actual_semantic_max = semantic_max or DEFAULT_SEMANTIC_MAX
+    actual_semantic_target = semantic_target or DEFAULT_SEMANTIC_TARGET
+
+    # Fixed-size chunking settings (fallback)
     actual_chunk_size = chunk_size or DEFAULT_CHUNK_SIZE
     actual_chunk_overlap = chunk_overlap or DEFAULT_CHUNK_OVERLAP
 
     # Use chunking for large content
     if len(content) > max_content_chars:
-        chunks = _split_with_overlap(content, actual_chunk_size, actual_chunk_overlap)
+        # Choose chunking strategy based on whether messages are provided
+        if messages:
+            # Semantic chunking: split at topic boundaries
+            chunks = split_semantic(
+                content,
+                messages,
+                min_size=actual_semantic_min,
+                max_size=actual_semantic_max,
+                target_size=actual_semantic_target,
+            )
+        else:
+            # Fixed-size chunking: backward compatible fallback
+            chunks = _split_with_overlap(content, actual_chunk_size, actual_chunk_overlap)
 
         # Extract from each chunk
         chunk_results = []

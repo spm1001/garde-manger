@@ -1608,7 +1608,9 @@ def process(ctx, path, no_extract, no_hybrid, quiet):
         if not no_hybrid:
             try:
                 full_text = source.full_text()
-                hybrid_result = extract_hybrid(full_text)
+                # Use semantic chunking with message data for better topic detection
+                messages = source.messages_with_offsets()
+                hybrid_result = extract_hybrid(full_text, messages=messages)
 
                 db.upsert_extraction(
                     source_id=source.source_id,
@@ -1718,11 +1720,13 @@ def backfill(ctx, limit, source_type, model, dry_run):
             click.echo(f"\nProcessing: {row['title'][:50]}...")
 
             try:
-                # Load source to get full text
+                # Load source to get full text and messages (for semantic chunking)
+                messages = None  # Only available for claude_code sources
                 if source_type_val == 'claude_code':
                     from pathlib import Path as PathLib
                     source = ClaudeCodeSource.from_file(PathLib(path))
                     full_text = source.full_text()
+                    messages = source.messages_with_offsets()
                 else:
                     # For other types, try to get from summaries table
                     summary_row = conn.execute(
@@ -1739,8 +1743,8 @@ def backfill(ctx, limit, source_type, model, dry_run):
                     click.echo(f"  Skipping: content too short")
                     continue
 
-                # Run hybrid extraction
-                hybrid_result = extract_hybrid(full_text, model=actual_model)
+                # Run hybrid extraction (uses semantic chunking if messages available)
+                hybrid_result = extract_hybrid(full_text, messages=messages, model=actual_model)
 
                 db.upsert_extraction(
                     source_id=source_id,

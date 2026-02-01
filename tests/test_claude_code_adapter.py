@@ -198,6 +198,55 @@ def test_clean_title_strips_command_tags():
     
     # No tags - should pass through
     assert clean_title("Normal title text") == "Normal title text"
-    
+
     # Collapse whitespace
     assert clean_title("Title   with   spaces") == "Title with spaces"
+
+
+# messages_with_offsets returns MessageData for semantic chunking
+def test_messages_with_offsets(tmp_jsonl):
+    path = tmp_jsonl([
+        {"type": "user", "timestamp": "2025-01-01T10:00:00Z", "sessionId": "abc123",
+         "message": {"role": "user", "content": "First user message"}},  # 18 chars
+        {"type": "assistant", "timestamp": "2025-01-01T10:01:00Z",
+         "message": {"role": "assistant", "content": "Assistant response here"}},  # 23 chars
+        {"type": "user", "timestamp": "2025-01-01T10:02:00Z",
+         "message": {"role": "user", "content": "Second user message"}},  # 19 chars
+    ])
+
+    src = ClaudeCodeSource.from_file(path)
+    messages = src.messages_with_offsets()
+
+    assert len(messages) == 3
+
+    # First message
+    assert messages[0].role == 'user'
+    assert messages[0].char_offset == 0
+    assert messages[0].char_length == 18
+
+    # Second message (offset = first length + separator '\n\n')
+    assert messages[1].role == 'assistant'
+    assert messages[1].char_offset == 20  # 18 + 2
+    assert messages[1].char_length == 23
+
+    # Third message
+    assert messages[2].role == 'user'
+    assert messages[2].char_offset == 45  # 20 + 23 + 2
+    assert messages[2].char_length == 19
+
+
+# messages_with_offsets tracks tool_use in messages
+def test_messages_with_offsets_tool_use(tmp_jsonl):
+    path = tmp_jsonl([
+        {"type": "assistant", "timestamp": "2025-01-01T10:00:00Z", "sessionId": "abc123",
+         "message": {"role": "assistant", "content": [
+             {"type": "text", "text": "Let me read that file"},
+             {"type": "tool_use", "name": "Read", "input": {"file_path": "/foo"}}
+         ]}},
+    ])
+
+    src = ClaudeCodeSource.from_file(path)
+    messages = src.messages_with_offsets()
+
+    assert len(messages) == 1
+    assert messages[0].has_tool_use is True

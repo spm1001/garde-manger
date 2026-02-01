@@ -42,6 +42,7 @@ class ClaudeCodeMessage:
     content: str | list
     timestamp: datetime
     is_tool_result: bool = False
+    has_tool_use: bool = False  # True if message contains tool_use blocks
 
 
 @dataclass
@@ -133,6 +134,7 @@ class ClaudeCodeSource:
 
                 # Extract content and metadata from content blocks
                 content = msg_data.get('content', '')
+                msg_has_tool_use = False  # Track if this message contains tool_use
                 if isinstance(content, list):
                     text_parts = []
                     for block in content:
@@ -145,6 +147,7 @@ class ClaudeCodeSource:
                             text_parts.append(block.get('text', ''))
 
                         elif block_type == 'tool_use':
+                            msg_has_tool_use = True
                             # Extract tool usage metadata
                             tool_name = block.get('name', '')
                             tool_input = block.get('input', {})
@@ -206,7 +209,8 @@ class ClaudeCodeSource:
                     role=role,
                     content=content,
                     timestamp=msg_ts or datetime.now(),
-                    is_tool_result='toolUseResult' in entry
+                    is_tool_result='toolUseResult' in entry,
+                    has_tool_use=msg_has_tool_use,
                 ))
 
         # Generate title: prefer summary, fall back to first user message
@@ -285,6 +289,45 @@ class ClaudeCodeSource:
             if isinstance(content, str) and content:
                 texts.append(content)
         return '\n\n'.join(texts)
+
+    def messages_with_offsets(self) -> list:
+        """Return message metadata with character offsets into full_text.
+
+        Used for semantic chunking - provides the structural information
+        needed to detect topic boundaries (timestamps, role changes, tool use).
+
+        Returns:
+            List of MessageData objects with char_offset/char_length mapping
+            to positions in the string returned by full_text().
+        """
+        from ..llm import MessageData
+
+        result = []
+        current_offset = 0
+
+        for msg in self.messages:
+            if msg.is_tool_result:
+                continue
+
+            content = msg.content
+            if not isinstance(content, str) or not content:
+                continue
+
+            content_len = len(content)
+
+            result.append(MessageData(
+                timestamp=msg.timestamp,
+                role=msg.role,
+                char_offset=current_offset,
+                char_length=content_len,
+                is_tool_result=msg.is_tool_result,
+                has_tool_use=msg.has_tool_use,
+            ))
+
+            # Account for separator ('\n\n' between messages)
+            current_offset += content_len + 2  # +2 for '\n\n'
+
+        return result
 
     def message_count(self) -> int:
         """Count non-tool messages."""
