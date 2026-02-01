@@ -112,50 +112,35 @@ def extract_from_source(
     )
 
 
-def get_source_content(source_id: str, db: Database, config: dict) -> tuple[str, bool]:
-    """Load full text content for a source.
+def get_source_content(source_id: str, db: Database, config: dict = None) -> tuple[str, bool]:
+    """Load full text content for a source from database.
+
+    Retrieves raw_text stored during indexing, which works for ALL source types
+    (claude_code, claude_ai, cloud_session, handoff, local_md, beads, arc, knowledge).
+
+    Args:
+        source_id: The source identifier
+        db: Database connection
+        config: Unused, kept for backwards compatibility
 
     Returns:
         Tuple of (full_text, is_voice)
     """
+    # Get source metadata for is_voice check
     source = db.get_source(source_id)
     if not source:
         raise ValueError(f"Source not found: {source_id}")
 
-    source_type = source['source_type']
-    path = source['path']
     is_voice = source.get('input_mode') == 'voice'
 
-    from pathlib import Path
+    # Retrieve raw_text from summaries table (stored during indexing)
+    conn = db.connect()
+    row = conn.execute(
+        "SELECT raw_text FROM summaries WHERE source_id = ?",
+        (source_id,)
+    ).fetchone()
 
-    if source_type == 'claude_code':
-        from .adapters.claude_code import ClaudeCodeSource
-        conv = ClaudeCodeSource.from_file(Path(path))
-        return conv.full_text(), is_voice
+    if not row or not row['raw_text']:
+        raise ValueError(f"No raw_text found for source {source_id}. Run 'mem scan' to index it first.")
 
-    elif source_type == 'claude_ai':
-        from .adapters.claude_ai import ClaudeAISource
-        # Virtual path format: claude_ai:{uuid}
-        if path.startswith('claude_ai:'):
-            uuid = path.split(':', 1)[1]
-            base_path = config.get('sources', {}).get('claude_ai', {}).get(
-                'path', '~/.claude/claude-ai/cache/conversations'
-            )
-            actual_path = Path(base_path).expanduser() / f"{uuid}.json"
-        else:
-            actual_path = Path(path)
-        conv = ClaudeAISource.from_file(actual_path)
-        return conv.full_text(), is_voice
-
-    elif source_type == 'cloud_session':
-        from .adapters.cloud_sessions import CloudSessionSource
-        conv = CloudSessionSource.from_file(Path(path))
-        return conv.full_text(), is_voice
-
-    elif source_type == 'handoff':
-        from .adapters.handoffs import HandoffSource
-        handoff = HandoffSource.from_file(Path(path))
-        return handoff.full_text(), False
-
-    else:
-        raise ValueError(f"Unknown source type: {source_type}")
+    return row['raw_text'], is_voice

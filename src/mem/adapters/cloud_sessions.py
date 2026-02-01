@@ -265,8 +265,9 @@ def _get_quick_summary(path: Path) -> str | None:
                             return block.get('text', '')[:100]
                 elif isinstance(content, str):
                     return content[:100]
-    except Exception:
-        pass
+    except Exception as e:
+        import sys
+        print(f"Warning: Failed to parse {path.name}: {e}", file=sys.stderr)
     return None
 
 
