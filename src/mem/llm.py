@@ -58,7 +58,7 @@ def get_client() -> anthropic.Anthropic:
             "ANTHROPIC_API_KEY not set. "
             "Set it in your environment or ~/.claude/memory/env"
         )
-    return anthropic.Anthropic(api_key=api_key)
+    return anthropic.Anthropic(api_key=api_key, timeout=60.0)
 
 
 EXTRACTION_PROMPT = """You are extracting named entities from a conversation or document.
