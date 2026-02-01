@@ -198,9 +198,10 @@ def confidence_to_float(confidence: str) -> float:
     }.get(confidence.lower(), 0.5)
 
 
-# Chunk size for large sessions (chars, not tokens)
-CHUNK_SIZE = 140_000
-CHUNK_OVERLAP = 5_000
+# Default chunk size for large sessions (chars, not tokens)
+# These can be overridden via config.yaml processing.chunk_size/chunk_overlap
+DEFAULT_CHUNK_SIZE = 140_000
+DEFAULT_CHUNK_OVERLAP = 5_000
 
 # Hybrid extraction prompt - validated against 5 benchmark questions
 HYBRID_EXTRACTION_PROMPT = """Extract a structured digest from this conversation.
@@ -387,6 +388,8 @@ def extract_hybrid(
     content: str,
     model: str = HYBRID_MODEL,
     max_content_chars: int = 140000,
+    chunk_size: int | None = None,
+    chunk_overlap: int | None = None,
 ) -> dict[str, Any]:
     """Extract structured digest from conversation using hybrid prompt.
 
@@ -394,6 +397,13 @@ def extract_hybrid(
     1. Split into overlapping chunks
     2. Extract from each chunk
     3. Merge results with deduplication
+
+    Args:
+        content: Full conversation text
+        model: Model to use for extraction
+        max_content_chars: Threshold for triggering chunking
+        chunk_size: Override default chunk size (from config or DEFAULT_CHUNK_SIZE)
+        chunk_overlap: Override default overlap (from config or DEFAULT_CHUNK_OVERLAP)
 
     Returns dict with keys:
         - summary: str
@@ -408,9 +418,13 @@ def extract_hybrid(
     """
     client = get_client()
 
+    # Use provided values or fall back to defaults
+    actual_chunk_size = chunk_size or DEFAULT_CHUNK_SIZE
+    actual_chunk_overlap = chunk_overlap or DEFAULT_CHUNK_OVERLAP
+
     # Use chunking for large content
     if len(content) > max_content_chars:
-        chunks = _split_with_overlap(content, CHUNK_SIZE, CHUNK_OVERLAP)
+        chunks = _split_with_overlap(content, actual_chunk_size, actual_chunk_overlap)
 
         # Extract from each chunk
         chunk_results = []

@@ -64,6 +64,8 @@ DEFAULT_CONFIG = {
         'summary_target_words': 200,
         'max_context_tokens': 100000,
         'skip_tool_results': True,
+        'chunk_size': 140000,       # chars, for large session extraction
+        'chunk_overlap': 5000,      # overlap between chunks
     },
     'search': {
         'default_results': 5,
