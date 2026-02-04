@@ -1,5 +1,10 @@
 {
   "disabledMcpjsonServers": [
     "workspace"
-  ]
+  ],
+  "permissions": {
+    "allow": [
+      "Skill(arc)"
+    ]
+  }
 }
