@@ -1629,7 +1629,7 @@ def process(ctx, path, no_extract, no_hybrid, quiet):
     """
     from pathlib import Path as PathLib
     from .extraction import extract_from_source
-    from .llm import extract_hybrid, HYBRID_MODEL
+    from .llm import extract_hybrid, MODEL
 
     config = ctx.obj['config']
     glossary = ctx.obj['glossary']
@@ -1733,7 +1733,7 @@ def process(ctx, path, no_extract, no_hybrid, quiet):
                     friction=hybrid_result.get('friction'),
                     patterns=hybrid_result.get('patterns'),
                     open_threads=hybrid_result.get('open_threads'),
-                    model_used=HYBRID_MODEL,
+                    model_used=MODEL,
                 )
 
                 builds_count = len(hybrid_result.get('builds', []))
@@ -1763,28 +1763,19 @@ def process(ctx, path, no_extract, no_hybrid, quiet):
 @main.command()
 @click.option('--limit', '-n', default=10, help='Maximum sources to process')
 @click.option('--source-type', type=str, help='Only process this source type')
-@click.option('--model', type=str, help='Model to use (default: sonnet)')
 @click.option('--dry-run', is_flag=True, help='Show what would be processed')
 @click.pass_context
-def backfill(ctx, limit, source_type, model, dry_run):
+def backfill(ctx, limit, source_type, dry_run):
     """Backfill hybrid extractions for existing sources.
 
     Finds sources without extractions and runs hybrid extraction on them.
+    Uses claude -p (Opus 4.6 via Max subscription) for all extractions.
     Use --limit to control batch size (default 10).
 
     Example:
         mem backfill --limit 50 --source-type claude_code
-        mem backfill --model claude-opus-4-20250514
     """
-    from .llm import extract_hybrid, HYBRID_MODEL
-
-    # Resolve model name
-    model_map = {
-        'opus': 'claude-opus-4-20250514',
-        'sonnet': 'claude-sonnet-4-20250514',
-        'haiku': 'claude-3-5-haiku-20241022',
-    }
-    actual_model = model_map.get(model, model) if model else HYBRID_MODEL
+    from .llm import extract_hybrid, MODEL
     from .adapters.claude_code import ClaudeCodeSource
 
     db = get_database()
@@ -1856,7 +1847,7 @@ def backfill(ctx, limit, source_type, model, dry_run):
                     continue
 
                 # Run hybrid extraction (uses semantic chunking if messages available)
-                hybrid_result = extract_hybrid(full_text, messages=messages, model=actual_model)
+                hybrid_result = extract_hybrid(full_text, messages=messages)
 
                 db.upsert_extraction(
                     source_id=source_id,
@@ -1867,7 +1858,7 @@ def backfill(ctx, limit, source_type, model, dry_run):
                     friction=hybrid_result.get('friction'),
                     patterns=hybrid_result.get('patterns'),
                     open_threads=hybrid_result.get('open_threads'),
-                    model_used=actual_model,
+                    model_used=MODEL,
                 )
 
                 builds_count = len(hybrid_result.get('builds', []))

@@ -11,7 +11,7 @@ Persistent, searchable memory across Claude sessions. FTS5 search over summaries
 ```bash
 uv run mem scan                    # Index sources (free, fast)
 uv run mem process <session>       # Extract single session
-uv run mem backfill --limit 100    # Batch extract (API calls)
+uv run mem backfill --limit 100    # Batch extract (via claude -p)
 uv run mem search "query"          # FTS5 search
 uv run mem drill <source_id>       # Load full content
 uv run mem status                  # Index statistics
@@ -23,7 +23,7 @@ uv run mem prune --yes             # Mark stale (preserves extractions)
 
 - `src/mem/cli.py` — Main CLI (~2100 lines, needs refactoring)
 - `src/mem/database.py` — SQLite with FTS5
-- `src/mem/llm.py` — Anthropic API calls, semantic chunking
+- `src/mem/llm.py` — LLM calls via `claude -p` (Opus 4.6, Max subscription), semantic chunking
 - `src/mem/extraction.py` — Entity extraction orchestration
 - `src/mem/adapters/*.py` — Source format parsers (8 types)
 

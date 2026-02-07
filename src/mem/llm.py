@@ -1,12 +1,19 @@
-"""LLM client for entity extraction and hybrid summarization."""
+"""LLM client for entity extraction and hybrid summarization.
+
+Uses claude -p (Claude Code CLI pipe mode) for all LLM calls,
+billing against Max subscription rather than API credits.
+"""
 
 import json
 import os
+import shutil
+import subprocess
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-import anthropic
+# Single model for all extractions — Opus 4.6 via Max subscription
+MODEL = "claude-opus-4-6"
 
 
 @dataclass
@@ -26,39 +33,54 @@ class MessageData:
     is_tool_result: bool = False
     has_tool_use: bool = False
 
-# Default model for entity extraction (fast, cheap)
-DEFAULT_MODEL = "claude-3-5-haiku-20241022"
 
-# Model for hybrid extraction (quality matters — Haiku loses ~40%)
-HYBRID_MODEL = "claude-sonnet-4-20250514"
+def _call_claude(prompt: str, timeout: int = 120) -> str:
+    """Send prompt to Claude CLI and return text response.
 
+    Uses claude -p (pipe mode) which bills against Max subscription.
+    All tools are disabled to ensure pure text generation.
 
-def get_client() -> anthropic.Anthropic:
-    """Get Anthropic client. Raises if no API key configured."""
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-
-    # Also check ~/.claude/memory/env file
-    if not api_key:
-        env_file = os.path.expanduser("~/.claude/memory/env")
-        if os.path.exists(env_file):
-            with open(env_file) as f:
-                for line in f:
-                    if line.startswith("export ANTHROPIC_API_KEY="):
-                        # Extract value, handling quotes
-                        value = line.split("=", 1)[1].strip()
-                        if value.startswith('"') and value.endswith('"'):
-                            value = value[1:-1]
-                        elif value.startswith("'") and value.endswith("'"):
-                            value = value[1:-1]
-                        api_key = value
-                        break
-
-    if not api_key:
+    Raises RuntimeError if claude CLI is not available, fails, or times out.
+    """
+    if not shutil.which("claude"):
         raise RuntimeError(
-            "ANTHROPIC_API_KEY not set. "
-            "Set it in your environment or ~/.claude/memory/env"
+            "claude CLI not found on PATH. "
+            "Install Claude Code: https://docs.anthropic.com/en/docs/claude-code"
         )
-    return anthropic.Anthropic(api_key=api_key, timeout=60.0)
+
+    # Prevent fork bombs: signal to session-start hooks that this is a
+    # programmatic subagent, not an interactive session.
+    env = {**os.environ, "MEM_SUBAGENT": "1"}
+
+    try:
+        result = subprocess.run(
+            [
+                "claude", "-p",
+                "--output-format", "json",
+                "--model", MODEL,
+                "--allowedTools", "",
+                "--no-session-persistence",
+            ],
+            input=prompt,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=env,
+        )
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"claude CLI timed out after {timeout}s")
+
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"claude CLI failed (exit {result.returncode}): "
+            f"{result.stderr[:500]}"
+        )
+
+    try:
+        output = json.loads(result.stdout)
+        return output["result"]
+    except (json.JSONDecodeError, KeyError) as e:
+        raise RuntimeError(f"Failed to parse claude CLI output: {e}")
 
 
 EXTRACTION_PROMPT = """You are extracting named entities from a conversation or document.
@@ -169,7 +191,6 @@ def extract_entities(
     content: str,
     glossary: dict,
     is_voice: bool = False,
-    model: str = DEFAULT_MODEL
 ) -> list[dict[str, Any]]:
     """Extract entities from content using LLM.
 
@@ -179,19 +200,10 @@ def extract_entities(
         - suggested_canonical: str | None
         - reasoning: str
 
-    Raises RuntimeError if API key not set or API call fails.
+    Raises RuntimeError if claude CLI not available or fails.
     """
-    client = get_client()
     prompt = build_extraction_prompt(content, glossary, is_voice)
-
-    response = client.messages.create(
-        model=model,
-        max_tokens=4096,
-        messages=[{"role": "user", "content": prompt}]
-    )
-
-    # Parse JSON from response
-    response_text = response.content[0].text
+    response_text = _call_claude(prompt)
 
     # Try to find JSON in response (may have preamble)
     try:
@@ -576,8 +588,6 @@ def _extract_chunk(
     content: str,
     chunk_num: int,
     total_chunks: int,
-    model: str,
-    client: "anthropic.Anthropic",
 ) -> dict[str, Any]:
     """Extract from a single chunk."""
     prompt = CHUNK_EXTRACTION_PROMPT.format(
@@ -586,13 +596,7 @@ def _extract_chunk(
         content=content,
     )
 
-    response = client.messages.create(
-        model=model,
-        max_tokens=4096,
-        messages=[{"role": "user", "content": prompt}]
-    )
-
-    response_text = response.content[0].text
+    response_text = _call_claude(prompt)
 
     try:
         start = response_text.find("{")
@@ -607,8 +611,6 @@ def _extract_chunk(
 
 def _merge_chunk_results(
     chunk_results: list[dict[str, Any]],
-    model: str,
-    client: "anthropic.Anthropic",
 ) -> dict[str, Any]:
     """Merge multiple chunk extractions into one coherent result."""
     # Format chunk results for the merge prompt
@@ -619,13 +621,7 @@ def _merge_chunk_results(
         chunk_results=formatted,
     )
 
-    response = client.messages.create(
-        model=model,
-        max_tokens=4096,
-        messages=[{"role": "user", "content": prompt}]
-    )
-
-    response_text = response.content[0].text
+    response_text = _call_claude(prompt)
 
     try:
         start = response_text.find("{")
@@ -650,7 +646,6 @@ def _merge_chunk_results(
 def extract_hybrid(
     content: str,
     messages: list[MessageData] | None = None,
-    model: str = HYBRID_MODEL,
     max_content_chars: int = 80000,
     chunk_size: int | None = None,
     chunk_overlap: int | None = None,
@@ -669,7 +664,6 @@ def extract_hybrid(
     Args:
         content: Full conversation text
         messages: Optional list of MessageData for semantic chunking
-        model: Model to use for extraction
         max_content_chars: Threshold for triggering chunking
         chunk_size: Override default chunk size (for fixed-size chunking)
         chunk_overlap: Override default overlap (for fixed-size chunking)
@@ -686,9 +680,8 @@ def extract_hybrid(
         - patterns: list of str
         - open_threads: list of str
 
-    Raises RuntimeError if API key not set or API call fails.
+    Raises RuntimeError if claude CLI not available or fails.
     """
-    client = get_client()
 
     # Semantic chunking settings
     actual_semantic_min = semantic_min or DEFAULT_SEMANTIC_MIN
@@ -718,22 +711,15 @@ def extract_hybrid(
         # Extract from each chunk
         chunk_results = []
         for i, chunk in enumerate(chunks):
-            result = _extract_chunk(chunk, i + 1, len(chunks), model, client)
+            result = _extract_chunk(chunk, i + 1, len(chunks))
             chunk_results.append(result)
 
         # Merge chunk results
-        return _merge_chunk_results(chunk_results, model, client)
+        return _merge_chunk_results(chunk_results)
 
     # Single extraction for content that fits
     prompt = HYBRID_EXTRACTION_PROMPT.format(content=content)
-
-    response = client.messages.create(
-        model=model,
-        max_tokens=4096,
-        messages=[{"role": "user", "content": prompt}]
-    )
-
-    response_text = response.content[0].text
+    response_text = _call_claude(prompt)
 
     # Parse JSON from response
     try:
