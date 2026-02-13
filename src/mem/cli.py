@@ -1478,7 +1478,7 @@ def recent(ctx, days, show_all, source_type, group_by_project):
 def extract(ctx, source_id, dry_run):
     """Extract entities from a source using LLM.
 
-    Requires ANTHROPIC_API_KEY environment variable.
+    Uses claude -p (Max subscription billing).
     """
     from .extraction import extract_from_source, get_source_content
 
@@ -1758,6 +1758,73 @@ def process(ctx, path, no_extract, no_hybrid, quiet):
                     click.echo(f"HYBRID_ERROR: {source.source_id} {e}")
         elif not quiet:
             click.echo("  (hybrid extraction skipped)")
+
+
+@main.command()
+@click.argument('path', type=click.Path(exists=True))
+@click.option('--quiet', '-q', is_flag=True, help='Minimal output for scripted use')
+@click.pass_context
+def index(ctx, path, quiet):
+    """Index a session file without running extraction.
+
+    Parses a JSONL session file, creates source + summary records in the
+    database, and marks it processed. Does NOT run entity or hybrid extraction.
+
+    Designed for use with staged extractions from /close — the session-end
+    hook calls `mem index` to create the source record, then pipes the
+    pre-generated extraction JSON into `mem store-extraction`.
+
+    Example:
+        mem index ~/.claude/projects/-Users-foo/abc123.jsonl
+    """
+    from pathlib import Path as PathLib
+
+    session_path = PathLib(path).resolve()
+
+    if session_path.suffix != '.jsonl':
+        if not quiet:
+            click.echo(f"Error: Expected .jsonl file, got: {session_path}")
+        return
+
+    try:
+        source = ClaudeCodeSource.from_file(session_path)
+    except Exception as e:
+        if not quiet:
+            click.echo(f"Error parsing {session_path}: {e}")
+        return
+
+    if source.title.lower() == 'warmup' or not source.messages:
+        if not quiet:
+            click.echo(f"Skipping empty/warmup session: {session_path.name}")
+        return
+
+    db = get_database()
+    with db:
+        db.upsert_source(
+            source_id=source.source_id,
+            source_type='claude_code',
+            title=source.title,
+            path=str(source.path),
+            created_at=source.created_at,
+            updated_at=source.updated_at,
+            is_subagent=source.is_subagent,
+            project_path=source.project_path,
+            metadata=source.metadata,
+        )
+
+        summary = _create_basic_summary(source)
+        db.upsert_summary(
+            source_id=source.source_id,
+            summary_text=summary,
+            has_presummary=source.has_presummary,
+        )
+        db.mark_processed(source.source_id)
+
+        if not quiet:
+            click.echo(f"Indexed: {source.title[:60]}")
+            click.echo(f"  ID: {source.source_id}")
+        else:
+            click.echo(f"INDEXED: {source.source_id}")
 
 
 @main.command()
@@ -2424,7 +2491,7 @@ def store_extraction(ctx, source_id, model):
         click.echo(f"Invalid JSON: {e}", err=True)
         raise SystemExit(1)
 
-    # Store extraction (FTS sync happens automatically in upsert_extraction)
+    # Store extraction and sync full flattened text to FTS
     with db:
         db.upsert_extraction(
             source_id=source_id,
@@ -2437,6 +2504,16 @@ def store_extraction(ctx, source_id, model):
             open_threads=data.get('open_threads'),
             model_used=model,
         )
+
+        # Flatten full extraction (builds, learnings, friction) into FTS
+        # upsert_extraction only syncs the summary field — this adds the rest
+        rich_text = _flatten_extraction_for_fts(data)
+        if rich_text:
+            db.upsert_summary(
+                source_id=source_id,
+                summary_text=rich_text,
+                has_presummary=True,
+            )
 
     click.echo(f"Stored extraction for {source_id}")
 

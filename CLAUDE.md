@@ -10,7 +10,8 @@ Persistent, searchable memory across Claude sessions. FTS5 search over summaries
 
 ```bash
 uv run mem scan                    # Index sources (free, fast)
-uv run mem process <session>       # Extract single session
+uv run mem index <session>         # Index only, no extraction (for staged flow)
+uv run mem process <session>       # Index + extract single session
 uv run mem backfill --limit 100    # Batch extract (via claude -p)
 uv run mem search "query"          # FTS5 search
 uv run mem drill <source_id>       # Load full content
@@ -35,9 +36,12 @@ All LLM calls go through `_call_claude()` in `llm.py`, which invokes `claude -p`
 
 **Flags used:** `--allowedTools ""` disables all tools (pure text generation), `--no-session-persistence` avoids phantom sessions, `--output-format json` for parsing the `result` field.
 
-**Model migration (Feb 2026):** Database contains three `model_used` values:
+**In-session extraction (Feb 2026):** The /close skill generates extraction JSON during the session (when Claude has full context) and stages it to `~/.claude/.pending-extractions/<session_id>.json`. The session-end hook detects this file and uses `mem index` + `mem store-extraction` instead of the expensive `mem process` path. Sessions that exit without /close fall back to `mem process` as before. The `model_used` for staged extractions is `claude-code-context`.
+
+**Model migration (Feb 2026):** Database contains four `model_used` values:
 - `claude-sonnet-4-20250514` — pre-migration extractions (API-based)
 - `claude-opus-4-6` — post-migration (CLI-based, Max subscription)
+- `claude-code-context` — in-session extraction from /close (no subprocess)
 - `skipped:content_too_short` — stub records for sources with <100 chars content
 
 ## Known Issues / Tech Debt
