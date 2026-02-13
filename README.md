@@ -13,14 +13,18 @@ You've had hundreds of conversations with Claude. Solved problems, made decision
 
 This tool gives Claude (and you) access to that history.
 
-## Part of the Ecosystem
+## The Kitchen
 
-garde-manger is designed to work alongside:
+garde-manger is part of a tool suite built around Claude Code, following a professional kitchen [brigade](https://en.wikipedia.org/wiki/Brigade_de_cuisine) metaphor:
 
-- **[beads](https://github.com/steveyegge/beads)** — Distributed issue tracking for coding agents (multi-session work)
-- **[claude-suite](https://github.com/spm1001/claude-suite)** — Session lifecycle skills (/open, /close, handoffs)
+| Tool | Brigade role | What it does |
+|------|-------------|--------------|
+| [**mise-en-space**](https://github.com/spm1001/mise-en-space) | Mise en place | Content from Google Workspace and the web, prepped and ready |
+| [**passe**](https://github.com/spm1001/passe) | The pass | Fast browser automation — the inspection window between kitchen and floor |
+| [**garde-manger**](https://github.com/spm1001/garde-manger) | Cold station | Persistent, searchable memory across Claude sessions |
+| [**trousse**](https://github.com/spm1001/trousse) | Knife roll | Skills and behavioural extensions for Claude Code |
 
-Together they address the session-to-session continuity problem from different angles: beads tracks *what needs doing*, handoffs pass *context between sessions*, and garde-manger provides *searchable ancestral memory*.
+Together they address the session-to-session continuity problem from different angles: [arc](https://github.com/spm1001/arc) tracks *what needs doing*, handoffs pass *context between sessions*, and garde-manger provides *searchable ancestral memory*.
 
 ## What It Does
 
@@ -157,7 +161,7 @@ sources:
 | `claude_ai` | Claude.ai exports | Yes (via [claude-data-sync](https://github.com/anthropics/claude-data-sync)) |
 | `handoff` | Session handoff files | Yes (`~/.claude/handoffs/`) |
 | `local_md` | Local markdown files | Configure paths in config.yaml |
-| `beads` | bd issue tracker | Yes (from `~/.beads/registry.json`) |
+| `arc` | Arc work tracker | Yes (from `.arc/` directories) |
 
 ## Glossary
 
