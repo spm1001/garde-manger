@@ -3,9 +3,9 @@
 import pytest
 from unittest.mock import patch, MagicMock
 
-from mem.extraction import extract_from_source, ExtractionResult
-from mem.glossary import Glossary
-from mem.database import Database
+from garde.extraction import extract_from_source, ExtractionResult
+from garde.glossary import Glossary
+from garde.database import Database
 
 
 @pytest.fixture
@@ -36,7 +36,7 @@ def test_extraction_matches_known_entities(mock_glossary, mock_db):
         {'mention': 'OAuth', 'confidence': 'high', 'suggested_canonical': None, 'reasoning': 'Auth protocol'},
     ]
 
-    with patch('mem.extraction.extract_entities', return_value=mock_entities):
+    with patch('garde.extraction.extract_entities', return_value=mock_entities):
         result = extract_from_source(
             source_id='test:123',
             full_text='Working on Acme OAuth integration',
@@ -62,7 +62,7 @@ def test_extraction_queues_unknown_entities(mock_glossary, mock_db):
         {'mention': 'FooBar', 'confidence': 'medium', 'suggested_canonical': None, 'reasoning': 'Unknown thing'},
     ]
 
-    with patch('mem.extraction.extract_entities', return_value=mock_entities):
+    with patch('garde.extraction.extract_entities', return_value=mock_entities):
         result = extract_from_source(
             source_id='test:456',
             full_text='Working with FooBar',
@@ -86,7 +86,7 @@ def test_extraction_uses_suggested_canonical(mock_glossary, mock_db):
         {'mention': 'oauth 2.0', 'confidence': 'high', 'suggested_canonical': 'OAuth', 'reasoning': 'Auth version'},
     ]
 
-    with patch('mem.extraction.extract_entities', return_value=mock_entities):
+    with patch('garde.extraction.extract_entities', return_value=mock_entities):
         result = extract_from_source(
             source_id='test:789',
             full_text='Using oauth 2.0 for auth',
@@ -105,7 +105,7 @@ def test_extraction_uses_suggested_canonical(mock_glossary, mock_db):
 
 # When LLM returns empty results, handle gracefully
 def test_extraction_handles_no_entities(mock_glossary, mock_db):
-    with patch('mem.extraction.extract_entities', return_value=[]):
+    with patch('garde.extraction.extract_entities', return_value=[]):
         result = extract_from_source(
             source_id='test:empty',
             full_text='Just some text',

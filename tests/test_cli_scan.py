@@ -3,7 +3,7 @@
 import pytest
 from click.testing import CliRunner
 
-from mem.cli import main
+from garde.cli import main
 
 
 class TestScanSourceFilter:

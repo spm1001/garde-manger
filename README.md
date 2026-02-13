@@ -1,8 +1,8 @@
-# claude-mem
+# garde-manger
 
-[![Tests](https://github.com/spm1001/claude-mem/actions/workflows/test.yml/badge.svg)](https://github.com/spm1001/claude-mem/actions/workflows/test.yml)
+[![Tests](https://github.com/spm1001/garde-manger/actions/workflows/test.yml/badge.svg)](https://github.com/spm1001/garde-manger/actions/workflows/test.yml)
 
-Persistent, searchable memory across Claude sessions.
+Persistent, searchable memory across Claude sessions. The cold station of the kitchen brigade — preservation, storage, retrieval.
 
 ## The Problem
 
@@ -15,12 +15,12 @@ This tool gives Claude (and you) access to that history.
 
 ## Part of the Ecosystem
 
-claude-mem is designed to work alongside:
+garde-manger is designed to work alongside:
 
 - **[beads](https://github.com/steveyegge/beads)** — Distributed issue tracking for coding agents (multi-session work)
 - **[claude-suite](https://github.com/spm1001/claude-suite)** — Session lifecycle skills (/open, /close, handoffs)
 
-Together they address the session-to-session continuity problem from different angles: beads tracks *what needs doing*, handoffs pass *context between sessions*, and claude-mem provides *searchable ancestral memory*.
+Together they address the session-to-session continuity problem from different angles: beads tracks *what needs doing*, handoffs pass *context between sessions*, and garde-manger provides *searchable ancestral memory*.
 
 ## What It Does
 
@@ -35,18 +35,18 @@ Requires [uv](https://docs.astral.sh/uv/) (fast Python package manager). If you 
 
 ```bash
 # Clone and install
-git clone https://github.com/spm1001/claude-mem.git
-cd claude-mem
+git clone https://github.com/spm1001/garde-manger.git
+cd garde-manger
 uv sync
 
 # Scan for sources and index them
-uv run mem scan
+uv run garde scan
 
 # Search your memory
-uv run mem search "authentication"
+uv run garde search "authentication"
 
 # Drill into a specific result
-uv run mem drill claude_code:abc123
+uv run garde drill claude_code:abc123
 ```
 
 ### API Key (for extraction)
@@ -63,7 +63,7 @@ echo 'export ANTHROPIC_API_KEY=sk-ant-...' > ~/.claude/memory/env
 
 ## How It Works
 
-![claude-mem Architecture](docs/architecture.png)
+![garde-manger Architecture](docs/architecture.png)
 
 **Key insight:** Text search over summaries + human-in-the-loop entity resolution outperforms vector embeddings for this use case.
 
@@ -71,27 +71,27 @@ echo 'export ANTHROPIC_API_KEY=sk-ant-...' > ~/.claude/memory/env
 
 ```bash
 # Discovery and indexing
-mem scan                     # Discover sources and add metadata to index
-mem process                  # Run LLM extraction on pending sources (costs API calls)
-mem status                   # Show index statistics
+garde scan                     # Discover sources and add metadata to index
+garde process                  # Run LLM extraction on pending sources (costs API calls)
+garde status                   # Show index statistics
 
 # Search
-mem search "query"           # FTS5 search over summaries
-mem search "query" -s claude_code  # Filter by source type
-mem drill <source_id>        # Load full source content
-mem drill <source_id> --outline    # Show conversation structure
+garde search "query"           # FTS5 search over summaries
+garde search "query" -s claude_code  # Filter by source type
+garde drill <source_id>        # Load full source content
+garde drill <source_id> --outline    # Show conversation structure
 
 # Maintenance
-mem resolve                  # Interactive entity resolution
-mem rebuild                  # Rebuild FTS5 index
+garde resolve                  # Interactive entity resolution
+garde rebuild                  # Rebuild FTS5 index
 ```
 
-**scan vs process:** `scan` discovers sources and indexes metadata (free, fast). `process` runs LLM extraction to enrich with summaries and learnings (costs API calls, slower).
+**scan vs process:** `garde scan` discovers sources and indexes metadata (free, fast). `garde process` runs LLM extraction to enrich with summaries and learnings (costs API calls, slower).
 
 ### Example Output
 
 ```
-$ uv run mem status
+$ uv run garde status
 
 Memory dir: /Users/you/.claude/memory
 Glossary: 85 entities
@@ -107,7 +107,7 @@ Database:
 ```
 
 ```
-$ uv run mem search "OAuth"
+$ uv run garde search "OAuth"
 
 3 results:
 
@@ -129,8 +129,8 @@ $ uv run mem search "OAuth"
 
 ## CLI vs Skill
 
-- **CLI (`uv run mem`)** — Run from terminal, works anywhere
-- **Skill (`/mem`)** — Invoked within Claude Code sessions, provides in-context search
+- **CLI (`uv run garde`)** — Run from terminal, works anywhere
+- **Skill (`/garde`)** — Invoked within Claude Code sessions, provides in-context search
 
 Use the CLI for maintenance (scan, status, rebuild). The skill is for in-session retrieval when you're working with Claude.
 
@@ -187,25 +187,25 @@ Start small. Add entries as you encounter confusion in search results.
 ## Privacy & Data
 
 - **Local only** — All data stays in `~/.claude/memory/memory.db`
-- **LLM extraction** — `mem process` sends conversation text to Anthropic API for summarization
+- **LLM extraction** — `garde process` sends conversation text to Anthropic API for summarization
 - **No telemetry** — This tool doesn't phone home
 
 ## Architecture
 
-- **Adapters** (`src/mem/adapters/`) — Parse each source format
-- **Database** (`src/mem/database.py`) — SQLite with FTS5
-- **CLI** (`src/mem/cli.py`) — Click-based command interface
-- **Extraction** (`src/mem/extraction.py`) — Entity and summary extraction
+- **Adapters** (`src/garde/adapters/`) — Parse each source format
+- **Database** (`src/garde/database.py`) — SQLite with FTS5
+- **CLI** (`src/garde/cli.py`) — Click-based command interface
+- **Extraction** (`src/garde/extraction.py`) — Entity and summary extraction
 
 ## Troubleshooting
 
 **Search fails with "invalid fts5 file format":**
 ```bash
-uv run mem rebuild
+uv run garde rebuild
 ```
 
 **No results for content you know exists:**
-- Check `mem status` to verify sources are indexed
+- Check `garde status` to verify sources are indexed
 - Try broader search terms (FTS5 uses token matching, not substring)
 
 ## Development

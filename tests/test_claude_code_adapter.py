@@ -7,7 +7,7 @@ import pytest
 from pathlib import Path
 from datetime import datetime
 
-from src.mem.adapters.claude_code import ClaudeCodeSource, _get_quick_summary, clean_title
+from src.garde.adapters.claude_code import ClaudeCodeSource, _get_quick_summary, clean_title
 
 
 @pytest.fixture

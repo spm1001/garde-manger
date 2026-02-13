@@ -11,10 +11,10 @@ from pathlib import Path
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from mem.adapters.claude_code import discover_claude_code
-from mem.adapters.cloud_sessions import discover_cloud_sessions
-from mem.adapters.handoffs import discover_handoffs
-from mem.config import load_config
+from garde.adapters.claude_code import discover_claude_code
+from garde.adapters.cloud_sessions import discover_cloud_sessions
+from garde.adapters.handoffs import discover_handoffs
+from garde.config import load_config
 import matplotlib.pyplot as plt
 import numpy as np
 

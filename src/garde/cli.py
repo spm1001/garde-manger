@@ -1,4 +1,4 @@
-"""Command-line interface for conversation memory system."""
+"""Command-line interface for garde-manger (conversation memory system)."""
 
 # CLI entry point
 import os
@@ -583,7 +583,7 @@ def status(ctx):
             click.echo(f"  Marked stale: {already_stale}")
         if newly_stale:
             click.echo(click.style(
-                f"  Paths missing: {newly_stale} (run 'mem prune --dry-run' to see details)",
+                f"  Paths missing: {newly_stale} (run 'garde prune --dry-run' to see details)",
                 fg='yellow'
             ))
 
@@ -602,10 +602,10 @@ def prune(dry_run, source_type, yes, hard_delete):
     Use --delete to permanently remove sources and all related data.
 
     Examples:
-        mem prune --dry-run              # Preview what would be marked stale
-        mem prune --dry-run --type local_md  # Only check local_md
-        mem prune --yes                  # Mark stale without confirmation
-        mem prune --delete --yes         # Hard delete (loses extractions)
+        garde prune --dry-run              # Preview what would be marked stale
+        garde prune --dry-run --type local_md  # Only check local_md
+        garde prune --yes                  # Mark stale without confirmation
+        garde prune --delete --yes         # Hard delete (loses extractions)
     """
     db = get_database()
     with db:
@@ -688,9 +688,9 @@ def list_sources(ctx, source_type, limit):
     Shows sources in the database, sorted by most recent.
 
     Examples:
-        mem list                    # Recent 20 sources
-        mem list --type handoff     # Only handoffs
-        mem list -n 50              # More results
+        garde list                    # Recent 20 sources
+        garde list --type handoff     # Only handoffs
+        garde list -n 50              # More results
     """
     db = get_database()
     with db:
@@ -738,18 +738,18 @@ def search(ctx, query, source_type, project_path, limit, recency_half_life):
     Supports FTS5 operators: OR, AND, NOT. Quote phrases with double quotes.
 
     Examples:
-        mem search OAuth
-        mem search "OAuth refresh"
-        mem search OAuth OR JWT
-        mem search OAuth NOT deprecated
-        mem search OAuth --project .          # current project only
-        mem search OAuth --project ~/Repos/x  # specific project
-        mem search OAuth --recency 90         # boost recent results (90-day half-life)
+        garde search OAuth
+        garde search "OAuth refresh"
+        garde search OAuth OR JWT
+        garde search OAuth NOT deprecated
+        garde search OAuth --project .          # current project only
+        garde search OAuth --project ~/Repos/x  # specific project
+        garde search OAuth --recency 90         # boost recent results (90-day half-life)
     """
     import subprocess
     glossary = ctx.obj['glossary']
 
-    # Join multiple arguments (allows: mem search term1 OR term2)
+    # Join multiple arguments (allows: garde search term1 OR term2)
     query = ' '.join(query)
 
     # Auto-quote hyphenated terms that aren't already quoted
@@ -807,7 +807,7 @@ def search(ctx, query, source_type, project_path, limit, recency_half_life):
                 for term in hyphenated:
                     suggested = suggested.replace(term, f'"{term}"')
                 click.echo(f"Error: FTS5 interprets hyphens as operators.")
-                click.echo(f"Try quoting hyphenated terms: mem search '{suggested}'")
+                click.echo(f"Try quoting hyphenated terms: garde search '{suggested}'")
                 return
         raise
 
@@ -991,10 +991,10 @@ def files(ctx, query, limit):
     Find conversations that touched specific files.
 
     Examples:
-        mem files server.py           # Files ending in server.py
-        mem files cli                  # Any file with 'cli' in path
-        mem files "mcp-google"         # Quote for exact match
-        mem files SKILL.md             # Find SKILL.md files
+        garde files server.py           # Files ending in server.py
+        garde files cli                  # Any file with 'cli' in path
+        garde files "mcp-google"         # Quote for exact match
+        garde files SKILL.md             # Find SKILL.md files
     """
     db = get_database()
 
@@ -1006,7 +1006,7 @@ def files(ctx, query, limit):
 
     if not results:
         click.echo("No results found.")
-        click.echo("\nNote: File search requires backfill. Run: mem backfill-files")
+        click.echo("\nNote: File search requires backfill. Run: garde backfill-files")
         return
 
     click.echo(f"\n{len(results)} results:\n")
@@ -1277,11 +1277,11 @@ def recent(ctx, days, show_all, source_type, group_by_project):
     Use --by-project for a project-grouped summary (useful for daily recaps).
 
     Examples:
-        mem recent              # Current project's recent activity
-        mem recent --all        # All recent activity
-        mem recent --all --by-project  # Summary grouped by project
-        mem recent --days 14    # Last 2 weeks
-        mem recent --type handoff  # Only handoffs
+        garde recent              # Current project's recent activity
+        garde recent --all        # All recent activity
+        garde recent --all --by-project  # Summary grouped by project
+        garde recent --days 14    # Last 2 weeks
+        garde recent --type handoff  # Only handoffs
     """
     from datetime import datetime, timedelta, timezone
     from collections import defaultdict
@@ -1555,7 +1555,7 @@ def resolve(ctx):
         click.echo(f"      confidence: {p['confidence']:.1f}, from: {source_title}")
 
     click.echo("\n(Interactive resolution UI: not yet implemented)")
-    click.echo("Use: mem resolve-one <id> --as <entity> to resolve manually")
+    click.echo("Use: garde resolve-one <id> --as <entity> to resolve manually")
 
 
 @main.command('resolve-one')
@@ -1567,7 +1567,7 @@ def resolve_one(ctx, pending_id, entity_name, reject):
     """Resolve a single pending entity.
 
     If the entity doesn't exist in glossary, it will be added to auto_mappings
-    for later review with 'mem digest'.
+    for later review with 'garde digest'.
     """
     from .glossary import save_glossary
 
@@ -1604,7 +1604,7 @@ def resolve_one(ctx, pending_id, entity_name, reject):
                 glossary.add_auto_mapping(mention, entity_name)
                 save_glossary(glossary)
                 click.echo(f"Added '{mention}' → '{entity_name}' to auto_mappings")
-                click.echo("(Use 'mem digest' to review and graduate to full entity)")
+                click.echo("(Use 'garde digest' to review and graduate to full entity)")
                 resolved = entity_name
 
             db.resolve_pending_entity(pending_id, resolved, status='resolved')
@@ -1625,7 +1625,7 @@ def process(ctx, path, no_extract, no_hybrid, quiet):
     patterns, etc.) plus entity extraction.
 
     Example:
-        mem process ~/.claude/projects/-Users-foo/abc123.jsonl
+        garde process ~/.claude/projects/-Users-foo/abc123.jsonl
     """
     from pathlib import Path as PathLib
     from .extraction import extract_from_source
@@ -1771,11 +1771,11 @@ def index(ctx, path, quiet):
     database, and marks it processed. Does NOT run entity or hybrid extraction.
 
     Designed for use with staged extractions from /close — the session-end
-    hook calls `mem index` to create the source record, then pipes the
-    pre-generated extraction JSON into `mem store-extraction`.
+    hook calls `garde index` to create the source record, then pipes the
+    pre-generated extraction JSON into `garde store-extraction`.
 
     Example:
-        mem index ~/.claude/projects/-Users-foo/abc123.jsonl
+        garde index ~/.claude/projects/-Users-foo/abc123.jsonl
     """
     from pathlib import Path as PathLib
 
@@ -1842,8 +1842,8 @@ def backfill(ctx, limit, source_type, skip_short, dry_run):
     Use --skip-short to mark sources with insufficient content as skipped.
 
     Example:
-        mem backfill --limit 50 --source-type claude_code
-        mem backfill --limit 500 --skip-short
+        garde backfill --limit 50 --source-type claude_code
+        garde backfill --limit 500 --skip-short
     """
     from .llm import extract_hybrid, MODEL
     from .adapters.claude_code import ClaudeCodeSource
@@ -2176,7 +2176,7 @@ def verify_fts(ctx):
     if not orphaned and not missing and summaries_count == fts_count:
         click.echo("\n✅ FTS index is in sync with summaries.")
     else:
-        click.echo("\n❌ FTS index is out of sync. Run 'uv run mem rebuild-fts' to fix.")
+        click.echo("\n❌ FTS index is out of sync. Run 'uv run garde rebuild-fts' to fix.")
 
 
 @main.command('populate-raw-text')
@@ -2310,9 +2310,9 @@ def extract_prompt(ctx, source_id):
     Designed for in-context extraction from Claude Code (Max subscription).
 
     Usage from /close:
-        PROMPT=$(uv run mem extract-prompt claude_code:abc123)
+        PROMPT=$(uv run garde extract-prompt claude_code:abc123)
         # Claude processes prompt, generates extraction JSON
-        echo '$JSON' | uv run mem store-extraction claude_code:abc123
+        echo '$JSON' | uv run garde store-extraction claude_code:abc123
     """
     from .extraction import get_source_content
     from .llm import HYBRID_EXTRACTION_PROMPT
@@ -2534,8 +2534,8 @@ def digest(ctx, remove):
     Use --remove to delete bad mappings.
 
     Examples:
-        mem digest                    # Show all auto-mappings
-        mem digest --remove "typo"    # Remove a bad mapping
+        garde digest                    # Show all auto-mappings
+        garde digest --remove "typo"    # Remove a bad mapping
     """
     from .glossary import save_glossary
 
@@ -2578,7 +2578,7 @@ def digest(ctx, remove):
             for m in sorted(mentions):
                 click.echo(f"      {m}")
 
-    click.echo(f"\nTo remove a bad mapping: mem digest --remove \"mention text\"")
+    click.echo(f"\nTo remove a bad mapping: garde digest --remove \"mention text\"")
     click.echo("To promote to full entity: edit ~/.claude/memory/glossary.yaml")
 
 

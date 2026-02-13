@@ -1,5 +1,5 @@
 ---
-name: mem
+name: garde
 description: Search and retrieve context from past Claude sessions. Triggers on 'search memory', 'find past sessions', 'what did we learn about', 'have we done this before', 'what did we decide about', 'what did I work on yesterday', 'remind me what we did', or when disoriented about past work ("I'm lost", "where were we?"). (user)
 ---
 
@@ -37,15 +37,15 @@ Search and retrieve context from past Claude sessions.
 
 ## Core Primitives
 
-All commands require `uv run` from `~/Repos/claude-mem`:
+All commands require `uv run` from `~/Repos/garde-manger`:
 
 ### 1. Search
 
 ```bash
-uv run mem search "query"              # FTS5 full-text search
-uv run mem search "query" --type X     # Filter by source type
-uv run mem search "query" --project .  # Current project only
-uv run mem search "query" -n 20        # More results (default: 10)
+uv run garde search "query"              # FTS5 full-text search
+uv run garde search "query" --type X     # Filter by source type
+uv run garde search "query" --project .  # Current project only
+uv run garde search "query" -n 20        # More results (default: 10)
 ```
 
 **Source types:** `claude_code`, `handoff`, `claude_ai`, `cloud_session`
@@ -53,19 +53,19 @@ uv run mem search "query" -n 20        # More results (default: 10)
 ### 2. Drill (Progressive Disclosure)
 
 ```bash
-uv run mem drill <id>              # Extraction summary (default)
-uv run mem drill <id> --outline    # Extraction + numbered turn index
-uv run mem drill <id> --turn N     # Specific turn in full
-uv run mem drill <id> --full       # All turns (truncated)
+uv run garde drill <id>              # Extraction summary (default)
+uv run garde drill <id> --outline    # Extraction + numbered turn index
+uv run garde drill <id> --turn N     # Specific turn in full
+uv run garde drill <id> --full       # All turns (truncated)
 ```
 
 ### 3. Recent
 
 ```bash
-uv run mem recent              # Current project's recent activity
-uv run mem recent --all        # All sources
-uv run mem recent --days 14    # Custom timeframe (default: 7)
-uv run mem recent --all --by-project  # Group by project with session counts
+uv run garde recent              # Current project's recent activity
+uv run garde recent --all        # All sources
+uv run garde recent --days 14    # Custom timeframe (default: 7)
+uv run garde recent --all --by-project  # Group by project with session counts
 ```
 
 **Daily recap pattern:** `--all --by-project` shows "infra-openwrt (8 sessions)" style summary — useful for "what did I work on yesterday?"
@@ -73,7 +73,7 @@ uv run mem recent --all --by-project  # Group by project with session counts
 ### 4. Status
 
 ```bash
-uv run mem status              # Database stats and coverage
+uv run garde status              # Database stats and coverage
 ```
 
 ---
@@ -209,8 +209,8 @@ EOF
 - `/open` command → can check recent activity
 
 **Depends on:**
-- `mem` CLI installed (via `uv run mem` from ~/Repos/claude-mem)
-- Database populated (`mem scan` has been run)
+- `garde` CLI installed (via `uv run garde` from ~/Repos/garde-manger)
+- Database populated (`garde scan` has been run)
 - API key for extraction (`~/.claude/memory/env`)
 
 ---
@@ -219,12 +219,12 @@ EOF
 
 | Task | Command |
 |------|---------|
-| Search all sources | `uv run mem search "query"` |
-| Search current project | `uv run mem search "query" --project .` |
-| Recent activity | `uv run mem recent` |
-| Daily recap (by project) | `uv run mem recent --all --by-project --days 1` |
-| View extraction | `uv run mem drill <id>` |
-| View specific turn | `uv run mem drill <id> --turn N` |
-| Check coverage | `uv run mem status` |
+| Search all sources | `uv run garde search "query"` |
+| Search current project | `uv run garde search "query" --project .` |
+| Recent activity | `uv run garde recent` |
+| Daily recap (by project) | `uv run garde recent --all --by-project --days 1` |
+| View extraction | `uv run garde drill <id>` |
+| View specific turn | `uv run garde drill <id> --turn N` |
+| Check coverage | `uv run garde status` |
 
 **For detailed CLI reference:** See `references/COMMANDS.md`

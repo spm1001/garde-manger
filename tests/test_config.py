@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from mem.config import load_config, expand_paths, DEFAULT_CONFIG
+from garde.config import load_config, expand_paths, DEFAULT_CONFIG
 
 
 def test_expand_paths_home():

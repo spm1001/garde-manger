@@ -6,7 +6,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import patch
 
-from src.mem.adapters.handoffs import decode_parent_dir, HandoffSource
+from src.garde.adapters.handoffs import decode_parent_dir, HandoffSource
 
 
 class TestDecodeParentDir:

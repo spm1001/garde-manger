@@ -49,7 +49,7 @@ Tag extractions with OpenClaw's type system:
 | O(c=0.9) | Opinion with confidence | "Progressive disclosure works better" |
 | S | Summary | Generated observations |
 
-Enables: `mem search --type opinion` or filtering TIL candidates.
+Enables: `garde search --type opinion` or filtering TIL candidates.
 
 ### Implementation
 Add `learning_type` field to extractions schema. Update hybrid prompt to output typed learnings.
@@ -70,10 +70,10 @@ This is sophisticated — park for later unless entity queries become frequent.
 
 | File | Change |
 |------|--------|
-| `src/mem/llm.py` | Replace `_split_with_overlap` with `_split_semantic` |
-| `src/mem/adapters/claude_code.py` | Expose message boundaries for semantic splitting |
+| `src/garde/llm.py` | Replace `_split_with_overlap` with `_split_semantic` |
+| `src/garde/adapters/claude_code.py` | Expose message boundaries for semantic splitting |
 | `prompts/hybrid.md` | Document semantic chunking approach |
-| `src/mem/database.py` | Add `learning_type` column (Priority 2) |
+| `src/garde/database.py` | Add `learning_type` column (Priority 2) |
 
 ## Test Cases
 

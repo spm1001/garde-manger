@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from datetime import datetime
 
-from src.mem.adapters.beads import BeadsSource, parse_jsonl, discover_beads, parse_datetime
+from src.garde.adapters.beads import BeadsSource, parse_jsonl, discover_beads, parse_datetime
 
 
 class TestParseDatetime:
@@ -202,7 +202,7 @@ class TestDiscoverBeads:
     # When config has fallback paths with existing file, should discover
     def test_discover_from_fallback(self, tmp_path, monkeypatch):
         # Mock registry to return empty (isolate from real beads)
-        from src.mem.adapters import beads
+        from src.garde.adapters import beads
         monkeypatch.setattr(beads, 'get_registry_paths', lambda: [])
 
         # Create beads structure
@@ -231,7 +231,7 @@ class TestDiscoverBeads:
 
     # When config has no beads section, should use defaults (but mock registry)
     def test_discover_empty_config(self, monkeypatch):
-        from src.mem.adapters import beads
+        from src.garde.adapters import beads
         monkeypatch.setattr(beads, 'get_registry_paths', lambda: [])
 
         config = {'sources': {}}

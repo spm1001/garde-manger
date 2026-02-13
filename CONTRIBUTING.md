@@ -1,4 +1,4 @@
-# Contributing to claude-mem
+# Contributing to garde-manger
 
 Thanks for your interest in contributing! This document covers the basics.
 
@@ -6,8 +6,8 @@ Thanks for your interest in contributing! This document covers the basics.
 
 ```bash
 # Clone the repo
-git clone https://github.com/spm1001/claude-mem.git
-cd claude-mem
+git clone https://github.com/spm1001/garde-manger.git
+cd garde-manger
 
 # Install dependencies (requires uv)
 uv sync
@@ -49,16 +49,16 @@ Tests use `use_turso=False` fixtures to ensure they work without cloud credentia
 
 ## Adding a New Source Adapter
 
-Source adapters live in `src/mem/adapters/`. To add a new source type:
+Source adapters live in `src/garde/adapters/`. To add a new source type:
 
-1. Create `src/mem/adapters/my_source.py`
+1. Create `src/garde/adapters/my_source.py`
 2. Implement a `MySource` dataclass with:
    - `source_id` property (format: `type:identifier`)
    - `has_presummary` property
    - `full_text()` method
    - `from_file()` classmethod (if file-based)
 3. Implement `discover_my_source(config)` generator
-4. Add to the scan command in `src/mem/cli.py`
+4. Add to the scan command in `src/garde/cli.py`
 5. Add tests in `tests/test_my_source_adapter.py`
 
 ## Questions?

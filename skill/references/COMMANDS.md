@@ -1,15 +1,15 @@
 # Memory CLI Reference
 
-Full command reference for `mem` CLI. All commands require `uv run` from `~/Repos/claude-mem`.
+Full command reference for `garde` CLI. All commands require `uv run` from `~/Repos/garde-manger`.
 
 ---
 
-## mem search
+## garde search
 
 Full-text search across indexed sources using FTS5.
 
 ```bash
-uv run mem search "query"
+uv run garde search "query"
 ```
 
 ### Options
@@ -31,17 +31,17 @@ uv run mem search "query"
 
 **Basic search:**
 ```bash
-uv run mem search "entity resolution"
+uv run garde search "entity resolution"
 ```
 
 **Hyphenated terms:** Auto-quoted by CLI
 ```bash
-uv run mem search "claude-memory"  # Works (auto-quoted internally)
+uv run garde search "claude-memory"  # Works (auto-quoted internally)
 ```
 
 **Exact phrase:**
 ```bash
-uv run mem search '"extraction pipeline"'  # Explicit quoting
+uv run garde search '"extraction pipeline"'  # Explicit quoting
 ```
 
 **What's indexed:**
@@ -53,26 +53,26 @@ uv run mem search '"extraction pipeline"'  # Explicit quoting
 
 ```bash
 # Search all sources
-uv run mem search "JWT authentication"
+uv run garde search "JWT authentication"
 
 # Current project only
-uv run mem search "deployment" --project .
+uv run garde search "deployment" --project .
 
 # Only handoffs
-uv run mem search "phase 3" --type handoff
+uv run garde search "phase 3" --type handoff
 
 # More results
-uv run mem search "MCP server" -n 25
+uv run garde search "MCP server" -n 25
 ```
 
 ---
 
-## mem drill
+## garde drill
 
 View source details with progressive disclosure.
 
 ```bash
-uv run mem drill <source_id>
+uv run garde drill <source_id>
 ```
 
 ### Modes
@@ -94,26 +94,26 @@ uv run mem drill <source_id>
 
 ```bash
 # View extraction summary
-uv run mem drill claude_code:28478c48-ba93-47ea-9741-e6cf1215e9e0
+uv run garde drill claude_code:28478c48-ba93-47ea-9741-e6cf1215e9e0
 
 # See turn structure
-uv run mem drill claude_code:28478c48 --outline
+uv run garde drill claude_code:28478c48 --outline
 
 # Read turn 5 in full
-uv run mem drill claude_code:28478c48 --turn 5
+uv run garde drill claude_code:28478c48 --turn 5
 
 # Full conversation (if really needed)
-uv run mem drill claude_code:28478c48 --full
+uv run garde drill claude_code:28478c48 --full
 ```
 
 ---
 
-## mem recent
+## garde recent
 
 Show recent activity, optionally filtered to current project.
 
 ```bash
-uv run mem recent
+uv run garde recent
 ```
 
 ### Options
@@ -126,7 +126,7 @@ uv run mem recent
 
 ### Project Detection
 
-When run from a git repo, `mem recent` auto-detects the project and filters to matching sources. Uses path encoding: `/Users/jane/Repos/foo` → `-Users-jane-Repos-foo`.
+When run from a git repo, `garde recent` auto-detects the project and filters to matching sources. Uses path encoding: `/Users/jane/Repos/foo` → `-Users-jane-Repos-foo`.
 
 Outside a git repo, defaults to all sources.
 
@@ -134,23 +134,23 @@ Outside a git repo, defaults to all sources.
 
 ```bash
 # Current project's recent activity
-uv run mem recent
+uv run garde recent
 
 # All sources, last 2 weeks
-uv run mem recent --all --days 14
+uv run garde recent --all --days 14
 
 # Only handoffs from current project
-uv run mem recent --type handoff
+uv run garde recent --type handoff
 ```
 
 ---
 
-## mem status
+## garde status
 
 Show database statistics and extraction coverage.
 
 ```bash
-uv run mem status
+uv run garde status
 ```
 
 ### Output
@@ -163,17 +163,17 @@ uv run mem status
 ### When to Use
 
 - Before searching, to verify database is populated
-- After `mem scan` to confirm indexing worked
+- After `garde scan` to confirm indexing worked
 - Debugging "no results" issues
 
 ---
 
-## mem scan
+## garde scan
 
 Index sources into the database. Run periodically to pick up new sessions.
 
 ```bash
-uv run mem scan
+uv run garde scan
 ```
 
 ### Options
@@ -194,20 +194,20 @@ uv run mem scan
 
 ```bash
 # Full scan
-uv run mem scan
+uv run garde scan
 
 # Just handoffs
-uv run mem scan --source handoffs
+uv run garde scan --source handoffs
 ```
 
 ---
 
-## mem backfill
+## garde backfill
 
 Run LLM extraction on sources without extractions.
 
 ```bash
-uv run mem backfill
+uv run garde backfill
 ```
 
 ### Options
@@ -221,48 +221,48 @@ uv run mem backfill
 ### Prerequisites
 
 - API key in `~/.claude/memory/env`
-- Sources must be scanned first (`mem scan`)
+- Sources must be scanned first (`garde scan`)
 
 ### Examples
 
 ```bash
 # Backfill all pending
-uv run mem backfill
+uv run garde backfill
 
 # Only handoffs
-uv run mem backfill --source-type handoff
+uv run garde backfill --source-type handoff
 
 # Preview
-uv run mem backfill --dry-run
+uv run garde backfill --dry-run
 ```
 
 ---
 
-## mem sync-fts
+## garde sync-fts
 
 Update FTS index with extraction content. Run after backfill to make learnings searchable.
 
 ```bash
-uv run mem sync-fts
+uv run garde sync-fts
 ```
 
 ### When to Use
 
-After running `mem backfill`, extraction summaries need to be flattened into FTS. This command does that.
+After running `garde backfill`, extraction summaries need to be flattened into FTS. This command does that.
 
 **The pipeline:**
 ```
-mem scan → mem backfill → mem sync-fts
+garde scan → garde backfill → garde sync-fts
 ```
 
 ---
 
-## mem list
+## garde list
 
 List sources with optional filtering.
 
 ```bash
-uv run mem list
+uv run garde list
 ```
 
 ### Options
@@ -280,20 +280,20 @@ uv run mem list
 
 ### Full refresh
 ```bash
-uv run mem scan && uv run mem backfill && uv run mem sync-fts
+uv run garde scan && uv run garde backfill && uv run garde sync-fts
 ```
 
 ### Check coverage then search
 ```bash
-uv run mem status
-uv run mem search "topic"
+uv run garde status
+uv run garde search "topic"
 ```
 
 ### Triage → drill workflow
 ```bash
-uv run mem search "authentication"
+uv run garde search "authentication"
 # Pick a result
-uv run mem drill claude_code:abc123
+uv run garde drill claude_code:abc123
 # Need more detail on turn 7
-uv run mem drill claude_code:abc123 --turn 7
+uv run garde drill claude_code:abc123 --turn 7
 ```

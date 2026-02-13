@@ -50,7 +50,7 @@ def _call_claude(prompt: str, timeout: int = 120) -> str:
 
     # Prevent fork bombs: signal to session-start hooks that this is a
     # programmatic subagent, not an interactive session.
-    env = {**os.environ, "MEM_SUBAGENT": "1"}
+    env = {**os.environ, "GARDE_SUBAGENT": "1"}
 
     try:
         result = subprocess.run(

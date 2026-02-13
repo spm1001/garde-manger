@@ -141,6 +141,6 @@ def get_source_content(source_id: str, db: Database, config: dict = None) -> tup
     ).fetchone()
 
     if not row or not row['raw_text']:
-        raise ValueError(f"No raw_text found for source {source_id}. Run 'mem scan' to index it first.")
+        raise ValueError(f"No raw_text found for source {source_id}. Run 'garde scan' to index it first.")
 
     return row['raw_text'], is_voice

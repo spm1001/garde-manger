@@ -8,9 +8,9 @@ from datetime import datetime
 import pytest
 from click.testing import CliRunner
 
-from mem.cli import main
-from mem.database import Database
-from mem.glossary import Glossary
+from garde.cli import main
+from garde.database import Database
+from garde.glossary import Glossary
 
 
 @pytest.fixture
@@ -78,7 +78,7 @@ Something important about testing.
     )
 
     # Patch to use our temp database
-    monkeypatch.setattr('mem.cli.get_database', lambda: Database(temp_memory_dir['db_path']))
+    monkeypatch.setattr('garde.cli.get_database', lambda: Database(temp_memory_dir['db_path']))
 
     result = runner.invoke(main, ['drill', 'handoff:test-handoff', '--full'])
 
@@ -121,7 +121,7 @@ def test_drill_claude_ai_shows_messages(temp_memory_dir, runner, monkeypatch):
         created_at=datetime.now(),
     )
 
-    monkeypatch.setattr('mem.cli.get_database', lambda: Database(temp_memory_dir['db_path']))
+    monkeypatch.setattr('garde.cli.get_database', lambda: Database(temp_memory_dir['db_path']))
 
     result = runner.invoke(main, ['drill', 'claude_ai:test-uuid', '--full'])
 
@@ -164,7 +164,7 @@ def test_drill_cloud_session_shows_messages(temp_memory_dir, runner, monkeypatch
         created_at=datetime.now(),
     )
 
-    monkeypatch.setattr('mem.cli.get_database', lambda: Database(temp_memory_dir['db_path']))
+    monkeypatch.setattr('garde.cli.get_database', lambda: Database(temp_memory_dir['db_path']))
 
     result = runner.invoke(main, ['drill', 'cloud_session:session_test123', '--full'])
 
@@ -193,7 +193,7 @@ def test_drill_unknown_source_type(temp_memory_dir, runner, monkeypatch):
         created_at=datetime.now(),
     )
 
-    monkeypatch.setattr('mem.cli.get_database', lambda: Database(temp_memory_dir['db_path']))
+    monkeypatch.setattr('garde.cli.get_database', lambda: Database(temp_memory_dir['db_path']))
 
     result = runner.invoke(main, ['drill', 'unknown:test', '--full'])
 
@@ -204,7 +204,7 @@ def test_drill_unknown_source_type(temp_memory_dir, runner, monkeypatch):
 # When drilling a source that doesn't exist, it should show an error
 def test_drill_nonexistent_source(temp_memory_dir, runner, monkeypatch):
     """Drill on nonexistent source shows error."""
-    monkeypatch.setattr('mem.cli.get_database', lambda: Database(temp_memory_dir['db_path']))
+    monkeypatch.setattr('garde.cli.get_database', lambda: Database(temp_memory_dir['db_path']))
 
     result = runner.invoke(main, ['drill', 'fake:source'])
 
@@ -226,9 +226,9 @@ def test_search_hyphenated_auto_quoted(temp_memory_dir, runner, monkeypatch):
     )
     db.upsert_summary(source_id='test:1', summary_text='Testing the draw-down pattern')
 
-    monkeypatch.setattr('mem.cli.get_database', lambda: Database(temp_memory_dir['db_path']))
-    monkeypatch.setattr('mem.cli.load_config', lambda: {})
-    monkeypatch.setattr('mem.cli.load_glossary', lambda: Glossary({'entities': {}}))
+    monkeypatch.setattr('garde.cli.get_database', lambda: Database(temp_memory_dir['db_path']))
+    monkeypatch.setattr('garde.cli.load_config', lambda: {})
+    monkeypatch.setattr('garde.cli.load_glossary', lambda: Glossary({'entities': {}}))
 
     result = runner.invoke(main, ['search', 'draw-down'])
 

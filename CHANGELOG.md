@@ -19,7 +19,7 @@ Initial public release.
 - **LLM extraction** — Summarization and entity extraction using Anthropic API
 - **Glossary system** — Map aliases to canonical terms for consistent search
 - **CLI interface** — `scan`, `search`, `drill`, `status`, `process`, `resolve`, and more
-- **Skill integration** — `/mem` skill for in-session search within Claude Code
+- **Skill integration** — `/garde` skill for in-session search within Claude Code
 
 ### Fixed
 
@@ -30,7 +30,7 @@ Initial public release.
 If upgrading from an earlier version, rebuild your FTS index:
 
 ```bash
-uv run mem rebuild-fts
+uv run garde rebuild-fts
 ```
 
 ### Changed

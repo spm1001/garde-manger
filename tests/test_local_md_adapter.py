@@ -6,7 +6,7 @@ import pytest
 from pathlib import Path
 from datetime import datetime
 
-from src.mem.adapters.local_md import LocalMdSource, discover_local_md
+from src.garde.adapters.local_md import LocalMdSource, discover_local_md
 
 
 class TestTitleExtraction:

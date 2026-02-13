@@ -1,4 +1,4 @@
-# claude-memory
+# garde-manger
 
 Persistent, searchable memory across Claude sessions.
 
@@ -6,10 +6,10 @@ Persistent, searchable memory across Claude sessions.
 
 ```bash
 # All commands need uv run (not globally installed)
-uv run mem scan      # Index all conversation sources
-uv run mem status    # Show database stats
-uv run mem search "query"   # FTS5 search
-uv run mem drill <id> --full  # View conversation
+uv run garde scan      # Index all conversation sources
+uv run garde status    # Show database stats
+uv run garde search "query"   # FTS5 search
+uv run garde drill <id> --full  # View conversation
 ```
 
 ## Current State (Jan 2026)
@@ -100,13 +100,13 @@ export TURSO_CLAUDE_MEMORY_TOKEN="<token from Keychain or turso db tokens create
 **Gotchas:**
 - libsql creates `-info` file alongside db for sync state
 - Parser warnings suppressed via RUST_LOG at CLI entry (was cosmetic libsql quirk with FTS5 syntax)
-- Don't run `mem scan` on Sprites — source files live on Mac
+- Don't run `garde scan` on Sprites — source files live on Mac
 - Never modify `memory.db` directly with sqlite3 — use libsql via `get_database()`
 - FTS5 uses token matching, not substring. "Reckitt" won't match "Reckitts" — the CLI auto-adds wildcard suffix ("Reckitt*") for better recall. Quoted phrases bypass this for exact matching.
 
 **Token management:**
 - Current token created: 2026-01-13, expires: never
-- `mem status` shows token issued date and expiry
+- `garde status` shows token issued date and expiry
 - If token expires, all machines fail silently until refreshed
 - To rotate token:
   ```bash
@@ -177,15 +177,15 @@ These three commands serve different purposes:
 
 | Command | What it does | When to run |
 |---------|--------------|-------------|
-| `mem scan` | Index metadata from source files | After new sessions/handoffs created |
-| `mem backfill` | Run LLM extraction (builds, learnings) | After scan, to enrich with AI analysis |
-| `mem sync-fts` | Update FTS with extraction content | After backfill, to make learnings searchable |
+| `garde scan` | Index metadata from source files | After new sessions/handoffs created |
+| `garde backfill` | Run LLM extraction (builds, learnings) | After scan, to enrich with AI analysis |
+| `garde sync-fts` | Update FTS with extraction content | After backfill, to make learnings searchable |
 
 **Typical flow:**
 ```bash
-mem scan                           # Index new sources
-mem backfill --source-type handoff # Extract from handoffs
-mem sync-fts                       # Make learnings searchable
+garde scan                           # Index new sources
+garde backfill --source-type handoff # Extract from handoffs
+garde sync-fts                       # Make learnings searchable
 ```
 
 **The FTS gap (Dec 2025):** Extractions create rich learnings/builds, but FTS only indexed summaries. `sync-fts` now flattens learnings into searchable text. If search can't find content you know exists, run `sync-fts`.
@@ -196,8 +196,8 @@ Memory indexing is automated via hooks. Here's what fires when:
 
 | Trigger | What Runs | Purpose |
 |---------|-----------|---------|
-| **Session end** (hook) | `mem process` | Index session + LLM extraction |
-| **Session end** (hook) | `mem scan --source handoffs --source beads` | Index handoffs/beads written during /close |
+| **Session end** (hook) | `garde process` | Index session + LLM extraction |
+| **Session end** (hook) | `garde scan --source handoffs --source beads` | Index handoffs/beads written during /close |
 | **Session start** (hook) | Health check | Warn if recent extractions failing |
 
 **Key files:**
@@ -220,7 +220,7 @@ Memory indexing is automated via hooks. Here's what fires when:
 
 ## Gotchas
 
-1. **Always use `uv run mem`** — not globally installed
+1. **Always use `uv run garde`** — not globally installed
 2. **Warmup sessions filtered** — sessions with just "Warmup" are excluded
 3. **Metadata is JSON blob** — query with `json_extract(metadata, '$.tool_count')`
 4. **Cloud sessions need claude-data-sync** — run sync first to populate cache/sessions/
@@ -228,6 +228,6 @@ Memory indexing is automated via hooks. Here's what fires when:
 6. **Hook failures now detected** — session-start health check warns if extractions failing. Check `~/.claude/extraction-logs/*.FAILED.log` for details
 7. **Extraction pollution** — old hook created "extraction sessions" in database, filter with `title NOT LIKE '%Entity Extraction%'`
 8. **Handoff decoder knows limited paths** — `decode_parent_dir()` only recognizes `-Repos-` and `-.claude` patterns. Handoffs from other locations (e.g., `~/Documents/`) won't have project_path extracted. Add new patterns to `handoffs.py` if needed.
-9. **Scan source filter** — use `mem scan --source handoffs` to rescan only one source type
+9. **Scan source filter** — use `garde scan --source handoffs` to rescan only one source type
 10. **Glossary aliases matter** — search expands via glossary, but only `name` and `aliases` are checked, not internal keys. If "CSP" doesn't find "CS&P", add "CSP" as an alias.
 11. **Orphaned handoffs** — ~99 handoffs (pre-Jan 2026) lack `session_id:` field and can't be programmatically linked to their sessions. They're still searchable by content. ~106 handoffs DO have `session_id:` embedded and could be retrofitted if needed. The naming convention changed: old style was `project-name-YYYY-MM-DD.md`, new style is `{session-id-first-8-chars}.md`. Retrofit is possible but not prioritized — content search works fine.

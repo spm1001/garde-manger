@@ -6,7 +6,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from mem.llm import _call_claude, MODEL
+from garde.llm import _call_claude, MODEL
 
 
 def _make_result(stdout="", stderr="", returncode=0):

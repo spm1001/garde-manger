@@ -6,7 +6,7 @@ from datetime import datetime
 
 import pytest
 
-from mem.database import Database
+from garde.database import Database
 
 
 @pytest.fixture

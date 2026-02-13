@@ -13,16 +13,16 @@ Known issues and fixes for common problems.
 **Diagnosis:**
 ```bash
 # Check database status
-uv run mem status
+uv run garde status
 ```
 
 **Causes and fixes:**
 
 | If status shows... | Cause | Fix |
 |-------------------|-------|-----|
-| Low source count | Not scanned | `uv run mem scan` |
-| Low extraction % | Backfill incomplete | `uv run mem backfill` |
-| Good coverage | FTS not synced | `uv run mem sync-fts` |
+| Low source count | Not scanned | `uv run garde scan` |
+| Low extraction % | Backfill incomplete | `uv run garde backfill` |
+| Good coverage | FTS not synced | `uv run garde sync-fts` |
 
 ### Search not finding recent sessions
 
@@ -30,8 +30,8 @@ uv run mem status
 
 **Fix:**
 ```bash
-uv run mem scan
-uv run mem sync-fts  # If extraction exists but not searchable
+uv run garde scan
+uv run garde sync-fts  # If extraction exists but not searchable
 ```
 
 ### Hyphenated terms return weird results
@@ -40,7 +40,7 @@ uv run mem sync-fts  # If extraction exists but not searchable
 
 **Fix:** The CLI auto-quotes hyphenated terms now. If still failing:
 ```bash
-uv run mem search '"claude-mem"'  # Explicit quotes
+uv run garde search '"claude-mem"'  # Explicit quotes
 ```
 
 ### Glossary aliases not expanding
@@ -64,7 +64,7 @@ entities:
 
 **Fix:** Verify the ID with:
 ```bash
-uv run mem list --limit 20
+uv run garde list --limit 20
 ```
 
 ### Extraction is thin/missing
@@ -76,7 +76,7 @@ uv run mem list --limit 20
 **Fix:**
 ```bash
 # Force re-extraction (if implemented)
-uv run mem backfill --source-type claude_code --force
+uv run garde backfill --source-type claude_code --force
 ```
 
 **Note:** Sessions under 100 characters are skipped as "warmups."
@@ -89,7 +89,7 @@ uv run mem backfill --source-type claude_code --force
 
 **Cause:** Not in a git repo, or repo not matching expected path format.
 
-**Symptoms:** `mem recent` shows all sources instead of current project.
+**Symptoms:** `garde recent` shows all sources instead of current project.
 
 **Diagnosis:**
 ```bash
@@ -117,7 +117,7 @@ git rev-parse --show-toplevel  # Should return repo root
 **Fix:** Wait and retry. If persistent:
 ```bash
 # Kill any hanging processes
-ps aux | grep "mem"
+ps aux | grep "garde"
 ```
 
 ### Database corruption
@@ -127,9 +127,9 @@ ps aux | grep "mem"
 **Fix:** Database can be rebuilt:
 ```bash
 rm ~/.claude/memory/memory.db
-uv run mem scan
-uv run mem backfill
-uv run mem sync-fts
+uv run garde scan
+uv run garde backfill
+uv run garde sync-fts
 ```
 
 ---
@@ -168,16 +168,16 @@ export ANTHROPIC_API_KEY=sk-ant-...
 **Symptoms:** Say "search memory" but skill doesn't invoke.
 
 **Possible causes:**
-- Skill not symlinked to `~/.claude/skills/memory`
+- Skill not symlinked to `~/.claude/skills/garde`
 - Session started before skill was created (needs reload)
 
 **Fix:**
 ```bash
 # Check symlink exists
-ls -la ~/.claude/skills/memory
+ls -la ~/.claude/skills/garde
 
 # If missing, create it
-ln -s ~/Repos/claude-mem/skill-memory ~/.claude/skills/mem
+ln -sf ~/Repos/garde-manger/skill ~/.claude/skills/garde
 ```
 
 Then restart Claude session for skill to load.
@@ -236,7 +236,7 @@ bd create "memory: [brief description]" \
 [what happened]
 
 ## Diagnostics Run
-- mem status: [output]
+- garde status: [output]
 - other checks: [output]
 EOF
 )"

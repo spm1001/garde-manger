@@ -2,7 +2,7 @@
 
 import pytest
 
-from mem.glossary import Glossary
+from garde.glossary import Glossary
 
 
 @pytest.fixture

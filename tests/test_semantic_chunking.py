@@ -3,7 +3,7 @@
 from datetime import datetime, timedelta
 import pytest
 
-from mem.llm import (
+from garde.llm import (
     MessageData,
     detect_topic_boundaries,
     split_semantic,

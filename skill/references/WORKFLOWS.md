@@ -24,13 +24,13 @@ User: "What did we decide about extraction models?"
 
 ```bash
 # Step 1: Search
-uv run mem search "extraction model haiku sonnet"
+uv run garde search "extraction model haiku sonnet"
 
 # Step 2: Triage - read extraction summary
-uv run mem drill claude_code:36108eba...
+uv run garde drill claude_code:36108eba...
 
 # Step 3: Drill if needed (specific turn with key discussion)
-uv run mem drill claude_code:36108eba --turn 12
+uv run garde drill claude_code:36108eba --turn 12
 
 # Step 4: Synthesize
 ```
@@ -45,10 +45,10 @@ uv run mem drill claude_code:36108eba --turn 12
 
 ```bash
 # 1. Search for current topic
-uv run mem search "topic we're working on"
+uv run garde search "topic we're working on"
 
 # 2. Check what past sessions learned
-uv run mem drill <relevant_id>
+uv run garde drill <relevant_id>
 
 # 3. Check current beads state
 bd ready
@@ -66,13 +66,13 @@ bd show <current_bead>
 
 ```bash
 # Check recent activity for this project
-uv run mem recent
+uv run garde recent
 
 # If sparse, check all sources
-uv run mem recent --all --days 14
+uv run garde recent --all --days 14
 
 # Search for specific topic within project
-uv run mem search "topic" --project .
+uv run garde search "topic" --project .
 ```
 
 ### What to Look For
@@ -90,10 +90,10 @@ uv run mem search "topic" --project .
 
 ```bash
 # Search for prior discussion
-uv run mem search "decision topic"
+uv run garde search "decision topic"
 
 # Check if there's a handoff with relevant context
-uv run mem search "topic" --type handoff
+uv run garde search "topic" --type handoff
 ```
 
 ### Decision Validation Pattern
@@ -111,7 +111,7 @@ uv run mem search "topic" --type handoff
 
 ```bash
 # Search memory
-uv run mem search "authentication"
+uv run garde search "authentication"
 
 # Check current beads state
 bd ready
@@ -135,27 +135,27 @@ Memory provides historical context; beads provide current work state. Cross-refe
 
 ```bash
 # Step 1: Check database status
-uv run mem status
+uv run garde status
 
 # Step 2: If coverage is low, scan
-uv run mem scan
+uv run garde scan
 
 # Step 3: Check if FTS needs sync
-uv run mem sync-fts
+uv run garde sync-fts
 
 # Step 4: Try different query terms
-uv run mem search "alternative terms"
+uv run garde search "alternative terms"
 
 # Step 5: Try without type filter
-uv run mem search "query" --type claude_code
+uv run garde search "query" --type claude_code
 ```
 
 ### Common Causes
 
 | Symptom | Likely Cause | Fix |
 |---------|--------------|-----|
-| Zero results, known content | Not indexed | `mem scan` |
-| Zero results, recent session | Extraction not in FTS | `mem sync-fts` |
+| Zero results, known content | Not indexed | `garde scan` |
+| Zero results, recent session | Extraction not in FTS | `garde sync-fts` |
 | Results but missing expected | Source type filtered out | Remove `--type` |
 | Hyphen breaks search | FTS operator interpretation | Already auto-quoted |
 
@@ -167,13 +167,13 @@ uv run mem search "query" --type claude_code
 
 ```bash
 # List recent handoffs
-uv run mem recent --type handoff
+uv run garde recent --type handoff
 
 # Search handoffs specifically
-uv run mem search "topic" --type handoff
+uv run garde search "topic" --type handoff
 
 # Drill into handoff (extractions are compact summaries)
-uv run mem drill handoff:...
+uv run garde drill handoff:...
 ```
 
 ### Why Handoffs
@@ -191,16 +191,16 @@ Handoffs are designed for continuity—they capture Done, Learned, Next explicit
 
 ```bash
 # Index all sources
-uv run mem scan
+uv run garde scan
 
 # Run extraction on sources without it
-uv run mem backfill
+uv run garde backfill
 
 # Update FTS with extraction content
-uv run mem sync-fts
+uv run garde sync-fts
 
 # Verify
-uv run mem status
+uv run garde status
 ```
 
 ### Timing
