@@ -24,12 +24,11 @@ sources:
     #   path: "~/Documents/Notes"
     #   pattern: "**/*.md"
 
-  beads:
-    # Discovery uses ~/.beads/registry.json automatically for active projects
-    # Fallback paths for dormant projects (daemon not running)
+  arc:
+    # Discovery uses .arc/items.jsonl in project directories
     fallback_paths:
-      - "~/Repos/*/.beads/issues.jsonl"
-      - "~/.claude/.beads/issues.jsonl"
+      - "~/Repos/*/.arc/items.jsonl"
+      - "~/.claude/.arc/items.jsonl"
 
   google:
     enabled: false

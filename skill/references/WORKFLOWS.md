@@ -50,13 +50,13 @@ uv run garde search "topic we're working on"
 # 2. Check what past sessions learned
 uv run garde drill <relevant_id>
 
-# 3. Check current beads state
-bd ready
-bd show <current_bead>
+# 3. Check current arc state
+arc ready
+arc show <current_item>
 ```
 
 **Then synthesize:**
-> "Based on past sessions, we learned X. Current bead Y says Z. Does this change our approach?"
+> "Based on past sessions, we learned X. Current item Y says Z. Does this change our approach?"
 
 ---
 
@@ -105,7 +105,7 @@ uv run garde search "topic" --type handoff
 
 ---
 
-## Workflow 5: Cross-Reference with Beads
+## Workflow 5: Cross-Reference with Arc
 
 **When:** Memory search finds context, need to connect to current work.
 
@@ -113,19 +113,19 @@ uv run garde search "topic" --type handoff
 # Search memory
 uv run garde search "authentication"
 
-# Check current beads state
-bd ready
-bd show <relevant_bead>
+# Check current arc state
+arc ready
+arc show <relevant_item>
 
-# Cross-reference: Does the bead know about what memory found?
+# Cross-reference: Does the arc item know about what memory found?
 ```
 
 ### Pattern
 
-Memory provides historical context; beads provide current work state. Cross-referencing catches:
-- Beads that duplicate past solved problems
+Memory provides historical context; arc provides current work state. Cross-referencing catches:
+- Items that duplicate past solved problems
 - Work that contradicts prior decisions
-- Context that should be in bead notes but isn't
+- Context that should be in item notes but isn't
 
 ---
 
@@ -221,7 +221,7 @@ uv run garde status
 ### Searching After Context Loaded
 
 **Bad:** Search for topic when handoff already has the answer
-**Good:** Check handoff/beads first; search if gaps remain
+**Good:** Check handoff/arc first; search if gaps remain
 
 ### Ignoring Source Types
 
@@ -231,4 +231,4 @@ uv run garde status
 ### Not Cross-Referencing
 
 **Bad:** Find historical context, don't connect to current work
-**Good:** Cross-reference with `bd ready` and current bead notes
+**Good:** Cross-reference with `arc ready` and current item notes
