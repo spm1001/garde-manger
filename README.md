@@ -2,6 +2,11 @@
 
 [![Tests](https://github.com/spm1001/garde-manger/actions/workflows/test.yml/badge.svg)](https://github.com/spm1001/garde-manger/actions/workflows/test.yml)
 
+> **Status:** Stable — used daily
+> **Works with:** Any agent, standalone CLI
+> **Install:** `uv tool install .`
+> **Requires:** Python 3.11+
+
 Persistent, searchable memory across Claude sessions. The cold station of the kitchen brigade — preservation, storage, retrieval.
 
 ## The Problem
