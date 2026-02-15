@@ -76,6 +76,18 @@ class AmpSource:
         if trees:
             metadata['trees'] = [t.get('displayName', '') for t in trees]
 
+        # Handoff chain links (parent/child relationships between threads)
+        relationships = data.get('relationships', [])
+        if relationships:
+            metadata['relationships'] = [
+                {
+                    'thread_id': r['threadID'],
+                    'type': r.get('type', 'handoff'),
+                    'role': r.get('role', 'unknown'),
+                }
+                for r in relationships
+            ]
+
         return cls(
             thread_id=thread_id,
             title=data.get('title', 'Untitled'),

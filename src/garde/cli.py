@@ -432,8 +432,8 @@ def scan(ctx, dry_run, source_filter):
                 if full_text:
                     db.upsert_summary(
                         source_id=source.source_id,
-                        summary_text=source.title,  # Title as placeholder summary
-                        has_presummary=False,
+                        summary_text=source.title,  # Placeholder until backfill or amp-close extracts
+                        has_presummary=False,  # Needs LLM extraction — title is NOT a real summary
                         raw_text=full_text,
                     )
 
