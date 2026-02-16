@@ -62,7 +62,7 @@
 ## Work (ITV)
 
 - **itv-appscript-deploy**: CLI for deploying Google Apps Script projects
-- **itv-google-auth**: Shared Google OAuth library for ITV tooling
+- **jeton**: Google OAuth token management (formerly itv-google-auth)
 - **itv-linkedin-analytics**: LinkedIn analytics aggregation to BigQuery
 - **itv-mit-team-meeting-workflow**: Automated weekly team meeting preparation
 - **itv-slides-formatter**: Google Apps Script add-ons for ITV brand formatting
