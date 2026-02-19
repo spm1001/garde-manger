@@ -1,6 +1,4 @@
 # Python
-__pycache__/
-*.py[cod]
 *$py.class
 *.so
 .Python
@@ -25,11 +23,6 @@ wheels/
 venv/
 ENV/
 
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
 
 # Project-specific
 memory.db
@@ -38,9 +31,6 @@ config.yaml
 logs/
 pending/
 
-# OS
-.DS_Store
-Thumbs.db
 
 # Development artifacts
 test_results/
@@ -49,8 +39,6 @@ spec.md
 
 # Project tracking (personal)
 .beads/
-.claude/
 
 # Experiments (spike artifacts)
 experiments/
-mise-fetch/
