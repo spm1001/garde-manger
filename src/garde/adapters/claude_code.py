@@ -61,6 +61,8 @@ class ClaudeCodeSource:
 
     @property
     def source_id(self) -> str:
+        if self.agent_id:
+            return f"claude_code:{self.agent_id}"
         return f"claude_code:{self.session_id}"
 
     @property
@@ -266,6 +268,10 @@ class ClaudeCodeSource:
             'tool_count': len(tool_calls),
         }
 
+        # For subagent sessions, store parent session ID for navigation
+        if agent_id and session_id:
+            metadata['parent_session_id'] = session_id
+
         return cls(
             path=path,
             session_id=session_id or path.stem,
@@ -385,8 +391,8 @@ def discover_claude_code(config: dict) -> Iterator[ClaudeCodeSource]:
         if not project_dir.is_dir():
             continue
 
-        for jsonl_file in project_dir.glob('*.jsonl'):
-            is_agent = jsonl_file.name.startswith('agent-')
+        for jsonl_file in project_dir.glob('**/*.jsonl'):
+            is_agent = jsonl_file.name.startswith('agent-') or 'subagents' in jsonl_file.parts
 
             # Skip agents if not included
             if is_agent and not include_subagents:

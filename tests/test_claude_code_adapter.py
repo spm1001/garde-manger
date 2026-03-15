@@ -7,7 +7,7 @@ import pytest
 from pathlib import Path
 from datetime import datetime
 
-from src.garde.adapters.claude_code import ClaudeCodeSource, _get_quick_summary, clean_title
+from src.garde.adapters.claude_code import ClaudeCodeSource, _get_quick_summary, clean_title, discover_claude_code
 
 
 @pytest.fixture
@@ -250,3 +250,129 @@ def test_messages_with_offsets_tool_use(tmp_jsonl):
 
     assert len(messages) == 1
     assert messages[0].has_tool_use is True
+
+
+# --- Subagent tests ---
+
+def _make_session_lines(session_id, agent_id=None, content="Hello"):
+    """Helper to create minimal valid JSONL lines."""
+    entry = {
+        "type": "user",
+        "timestamp": "2025-06-01T12:00:00Z",
+        "sessionId": session_id,
+        "message": {"role": "user", "content": content},
+    }
+    if agent_id:
+        entry["agentId"] = agent_id
+    return [entry]
+
+
+# source_id should use agent_id when present (not session_id)
+def test_source_id_uses_agent_id_for_subagents(tmp_jsonl):
+    path = tmp_jsonl(_make_session_lines("parent-123", agent_id="agent-456"))
+    src = ClaudeCodeSource.from_file(path)
+    assert src.source_id == "claude_code:agent-456"
+    assert src.is_subagent is True
+
+
+# source_id should use session_id when agent_id is absent (regression guard)
+def test_source_id_uses_session_id_for_main_sessions(tmp_jsonl):
+    path = tmp_jsonl(_make_session_lines("session-789"))
+    src = ClaudeCodeSource.from_file(path)
+    assert src.source_id == "claude_code:session-789"
+    assert src.is_subagent is False
+
+
+# parent_session_id should appear in metadata for agent sessions
+def test_parent_session_id_in_metadata_for_agents(tmp_jsonl):
+    path = tmp_jsonl(_make_session_lines("parent-abc", agent_id="agent-def"))
+    src = ClaudeCodeSource.from_file(path)
+    assert src.metadata["parent_session_id"] == "parent-abc"
+
+
+# parent_session_id should NOT appear for main sessions
+def test_no_parent_session_id_for_main_sessions(tmp_jsonl):
+    path = tmp_jsonl(_make_session_lines("session-xyz"))
+    src = ClaudeCodeSource.from_file(path)
+    assert "parent_session_id" not in src.metadata
+
+
+# --- Discovery tests ---
+
+@pytest.fixture
+def projects_tree(tmp_path):
+    """Create a realistic projects directory with main + subagent sessions."""
+    base = tmp_path / "projects"
+    project = base / "-home-user-Repos-foo"
+    project.mkdir(parents=True)
+
+    # Main session
+    main_file = project / "abc-def-123.jsonl"
+    lines = _make_session_lines("abc-def-123", content="Main session work")
+    with main_file.open("w") as f:
+        for line in lines:
+            f.write(json.dumps(line) + "\n")
+
+    # Subagent in subagents/ directory
+    subagents_dir = project / "abc-def-123" / "subagents"
+    subagents_dir.mkdir(parents=True)
+    agent_file = subagents_dir / "agent-ghi-789.jsonl"
+    # Agents need enough lines to pass min_lines filter
+    agent_lines = _make_session_lines("abc-def-123", agent_id="agent-ghi-789", content="Agent work")
+    # Pad with extra messages to pass min_lines=10
+    for i in range(15):
+        agent_lines.append({
+            "type": "assistant",
+            "timestamp": f"2025-06-01T12:0{i % 10}:00Z",
+            "sessionId": "abc-def-123",
+            "agentId": "agent-ghi-789",
+            "message": {"role": "assistant", "content": f"Response {i}"},
+        })
+    with agent_file.open("w") as f:
+        for line in agent_lines:
+            f.write(json.dumps(line) + "\n")
+
+    # Short agent (should be filtered by min_lines)
+    short_agent = subagents_dir / "agent-short.jsonl"
+    with short_agent.open("w") as f:
+        f.write(json.dumps({"type": "user", "timestamp": "2025-06-01T12:00:00Z",
+                            "sessionId": "abc-def-123", "agentId": "agent-short",
+                            "message": {"role": "user", "content": "Brief"}}) + "\n")
+
+    return base
+
+
+# discover should find files in subagents/ directories
+def test_discover_finds_subagent_files(projects_tree):
+    config = {"sources": {"claude_code": {"path": str(projects_tree), "min_lines": 10}}}
+    sources = list(discover_claude_code(config))
+    ids = {s.source_id for s in sources}
+    assert "claude_code:agent-ghi-789" in ids
+    assert "claude_code:abc-def-123" in ids
+
+
+# discover should respect include_subagents=False
+def test_discover_excludes_subagents_when_disabled(projects_tree):
+    config = {"sources": {"claude_code": {
+        "path": str(projects_tree), "min_lines": 10, "include_subagents": False,
+    }}}
+    sources = list(discover_claude_code(config))
+    ids = {s.source_id for s in sources}
+    assert "claude_code:agent-ghi-789" not in ids
+    assert "claude_code:abc-def-123" in ids
+
+
+# discover should filter short agents by min_lines
+def test_discover_filters_short_agents(projects_tree):
+    config = {"sources": {"claude_code": {"path": str(projects_tree), "min_lines": 10}}}
+    sources = list(discover_claude_code(config))
+    ids = {s.source_id for s in sources}
+    assert "claude_code:agent-short" not in ids
+
+
+# is_subagent should be True for files in subagents/ dir (even without agent- prefix)
+def test_is_subagent_from_subagents_directory(projects_tree):
+    config = {"sources": {"claude_code": {"path": str(projects_tree), "min_lines": 1}}}
+    sources = list(discover_claude_code(config))
+    agent_sources = [s for s in sources if s.is_subagent]
+    assert len(agent_sources) >= 1
