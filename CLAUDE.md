@@ -46,7 +46,7 @@ All LLM calls go through `_call_claude()` in `llm.py`, which invokes `claude -p`
 
 ## Known Issues / Tech Debt
 
-See `ADAPTER_AUDIT.md` for the adapter protocol plan.
+Adapter protocol plan is tracked in bon.
 
 **CLI monolith:** The scan command has ~450 lines of near-identical loops for 8 source types. Refactor to registry pattern is tracked in bon.
 

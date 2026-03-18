@@ -135,7 +135,7 @@ $ uv run garde search "OAuth"
 
 Use the CLI for maintenance (scan, status, rebuild). The skill is for in-session retrieval when you're working with Claude.
 
-See the `skill/` directory for the Claude Code skill.
+See the `skills/memory/` directory for the Claude Code skill.
 
 ## Configuration
 
@@ -230,10 +230,6 @@ uv run pytest tests/test_database.py -v
 | `CLAUDE.md.example` | Template for your project's CLAUDE.md (copy and customize) |
 | `glossary.yaml.example` | Example glossary structure |
 | `config.yaml.template` | Example configuration |
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## License
 
