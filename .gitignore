@@ -42,3 +42,4 @@ spec.md
 
 # Experiments (spike artifacts)
 experiments/
+.env
