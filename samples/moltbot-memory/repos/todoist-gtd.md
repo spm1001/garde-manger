@@ -41,7 +41,7 @@ todoist done <task-id>
 todoist doctor                      # Diagnose setup issues
 ```
 
-**As Claude skill:** Symlink to `~/.claude/skills/todoist-gtd`
+**As Claude skill:** Install via batterie-de-savoir plugin marketplace
 
 **Triggers:** "check my @Claude inbox", "what's waiting for?", "weekly review"
 

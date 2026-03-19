@@ -168,16 +168,16 @@ export ANTHROPIC_API_KEY=sk-ant-...
 **Symptoms:** Say "search memory" but skill doesn't invoke.
 
 **Possible causes:**
-- Skill not symlinked to `~/.claude/skills/garde`
-- Session started before skill was created (needs reload)
+- Plugin not installed (install via `/plugin marketplace add spm1001/batterie-de-savoir` or `/install garde-manger`)
+- Session started before plugin was installed (needs reload)
 
 **Fix:**
 ```bash
-# Check symlink exists
-ls -la ~/.claude/skills/garde
+# Check plugin is installed
+claude plugin list | grep garde
 
-# If missing, create it
-ln -sf ~/Repos/garde-manger/skill ~/.claude/skills/garde
+# If missing, install it
+claude plugin install spm1001/garde-manger
 ```
 
 Then restart Claude session for skill to load.
