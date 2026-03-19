@@ -1,9 +1,17 @@
 {
   "name": "garde-manger",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Persistent searchable memory across Claude sessions. Requires: garde CLI (uv tool install garde-manger)",
-  "author": { "name": "Sameer Modha", "url": "https://github.com/spm1001" },
+  "author": {
+    "name": "Sameer Modha",
+    "url": "https://github.com/spm1001"
+  },
   "repository": "https://github.com/spm1001/garde-manger",
   "license": "MIT",
-  "keywords": ["memory", "search", "sessions", "history"]
+  "keywords": [
+    "memory",
+    "search",
+    "sessions",
+    "history"
+  ]
 }
