@@ -1,6 +1,7 @@
 ---
 name: garde
 description: Search and retrieve context from past Claude sessions. Triggers on 'search memory', 'find past sessions', 'what did we learn about', 'have we done this before', 'what did we decide about', 'what did I work on yesterday', 'remind me what we did', or when disoriented about past work ("I'm lost", "where were we?"). (user)
+allowed-tools: ["Bash(garde:*)", Read]
 requires:
   - cli: garde
     check: "garde --version"
