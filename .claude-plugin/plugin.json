@@ -1,6 +1,6 @@
 {
   "name": "garde-manger",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Persistent searchable memory across Claude sessions. Requires: garde CLI (uv tool install garde-manger)",
   "author": {
     "name": "Sameer Modha",
