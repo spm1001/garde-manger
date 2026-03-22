@@ -80,6 +80,8 @@ Config files (`config.yaml`, `glossary.yaml`) stay at `~/.claude/memory/` — th
 ## Staged Extraction Contract
 
 This is the cross-repo contract between bon's `/close` skill and garde's session-end hook.
+If you change fields here, update bon's `/close` skill too (in `skills/close/SKILL.md`,
+search for "extraction JSON") — and vice versa.
 
 **Producer:** bon's `/close` skill generates extraction JSON and calls `scripts/stage-extraction.sh`.
 
