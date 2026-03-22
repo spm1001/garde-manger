@@ -50,6 +50,8 @@ def _call_claude(prompt: str, timeout: int = 120) -> str:
 
     # Prevent fork bombs: signal to session-start hooks that this is a
     # programmatic subagent, not an interactive session.
+    # Vertex billing env vars (CLAUDE_CODE_USE_VERTEX, ANTHROPIC_VERTEX_PROJECT_ID,
+    # etc.) are inherited from the parent process via os.environ.
     env = {**os.environ, "GARDE_SUBAGENT": "1"}
 
     try:
