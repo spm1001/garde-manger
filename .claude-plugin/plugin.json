@@ -1,6 +1,6 @@
 {
   "name": "garde-manger",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Persistent searchable memory across Claude sessions. Requires: garde CLI (uv tool install garde-manger)",
   "author": {
     "name": "Sameer Modha",
@@ -13,5 +13,29 @@
     "search",
     "sessions",
     "history"
-  ]
+  ],
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/ensure-garde.sh"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/session-end.sh"
+          }
+        ]
+      }
+    ]
+  }
 }

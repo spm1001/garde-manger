@@ -1,11 +1,26 @@
 """Ingest commands — index and process session files."""
 
+import json
+import re
+import sys
+from datetime import datetime, timezone
+from pathlib import Path as PathLib
+
 import click
 
 from ..database import get_database
 from ..adapters.claude_code import ClaudeCodeSource
 from . import main
 from ._helpers import _create_basic_summary, _flatten_extraction_for_fts
+
+
+def _encode_cwd(cwd: str) -> str:
+    """Encode a directory path the way Claude Code does for project dirs.
+
+    Replaces all non-alphanumeric, non-hyphen characters with hyphens.
+    Must match the pattern in scripts/stage-extraction.sh.
+    """
+    return re.sub(r'[^a-zA-Z0-9-]', '-', cwd)
 
 
 @main.command()
@@ -222,3 +237,118 @@ def index(ctx, path, quiet):
             click.echo(f"  ID: {source.source_id}")
         else:
             click.echo(f"INDEXED: {source.source_id}")
+
+
+@main.command('ingest-session')
+@click.option('--session-id', required=True, help='Session UUID (from hook stdin)')
+@click.option('--cwd', required=True, help='Working directory of the session')
+@click.pass_context
+def ingest_session(ctx, session_id, cwd):
+    """Index a session from its ID, consuming any staged extraction.
+
+    Designed as the single entry point for session-end hooks. Encapsulates
+    file discovery, indexing, and staged extraction storage in Python —
+    the hook script is a thin wrapper calling this command.
+
+    Fast path (staged extraction from /close):
+        Index + store extraction from ~/.claude/.pending-extractions/{session_id}.json
+
+    Safety-net path (no staged extraction):
+        Index only — extraction deferred to `garde backfill`.
+
+    Example:
+        garde ingest-session --session-id abc123 --cwd /home/user/project
+    """
+    ts = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+
+    # Find the session JSONL file
+    encoded = _encode_cwd(cwd)
+    sessions_dir = PathLib.home() / '.claude' / 'projects' / encoded
+    session_file = sessions_dir / f'{session_id}.jsonl'
+
+    if not session_file.exists():
+        click.echo(f"[{ts}] Session file not found: {session_file}", err=True)
+        return
+
+    # Validate minimum size (JSONL might still be flushing)
+    if session_file.stat().st_size < 200:
+        click.echo(f"[{ts}] Session file too small (likely still flushing): {session_file}", err=True)
+        return
+
+    # Parse the session
+    try:
+        source = ClaudeCodeSource.from_file(session_file)
+    except Exception as e:
+        click.echo(f"[{ts}] Error parsing {session_file.name}: {e}", err=True)
+        return
+
+    if source.title.lower() == 'warmup' or not source.messages:
+        click.echo(f"[{ts}] Skipping empty/warmup: {session_file.name}", err=True)
+        return
+
+    db = get_database()
+
+    # Index the source
+    with db:
+        db.upsert_source(
+            source_id=source.source_id,
+            source_type='claude_code',
+            title=source.title,
+            path=str(source.path),
+            created_at=source.created_at,
+            updated_at=source.updated_at,
+            is_subagent=source.is_subagent,
+            project_path=source.project_path,
+            metadata=source.metadata,
+        )
+
+        summary = _create_basic_summary(source)
+        db.upsert_summary(
+            source_id=source.source_id,
+            summary_text=summary,
+            has_presummary=source.has_presummary,
+        )
+        db.mark_processed(source.source_id)
+
+    click.echo(f"[{ts}] Indexed: {source.source_id} ({source.title[:50]})", err=True)
+
+    # Check for staged extraction (fast path from /close)
+    pending_dir = PathLib.home() / '.claude' / '.pending-extractions'
+    staged_file = pending_dir / f'{session_id}.json'
+
+    if staged_file.exists():
+        try:
+            data = json.loads(staged_file.read_text())
+
+            with db:
+                db.upsert_extraction(
+                    source_id=source.source_id,
+                    summary=data.get('summary'),
+                    arc=data.get('arc'),
+                    builds=data.get('builds'),
+                    learnings=data.get('learnings'),
+                    friction=data.get('friction'),
+                    patterns=data.get('patterns'),
+                    open_threads=data.get('open_threads'),
+                    model_used='claude-code-context',
+                )
+
+                # Sync to FTS
+                rich_text = _flatten_extraction_for_fts(data)
+                if rich_text:
+                    db.upsert_summary(
+                        source_id=source.source_id,
+                        summary_text=rich_text,
+                        has_presummary=True,
+                    )
+
+            staged_file.unlink()
+            builds = len(data.get('builds', []))
+            learnings = len(data.get('learnings', []))
+            click.echo(f"[{ts}] Stored staged extraction: {builds} builds, {learnings} learnings", err=True)
+
+        except (json.JSONDecodeError, OSError) as e:
+            click.echo(f"[{ts}] Staged extraction error (kept file): {e}", err=True)
+            # Don't delete the staged file — let backfill or manual retry handle it
+    else:
+        click.echo(f"[{ts}] No staged extraction — deferred to backfill", err=True)
