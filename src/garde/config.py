@@ -21,6 +21,17 @@ log = logging.getLogger(__name__)
 PLUGIN_DATA_DIR_NAME = 'garde-manger-batterie-de-savoir'
 
 
+def encode_cwd(cwd: str) -> str:
+    """Encode a directory path the way Claude Code does for project dirs.
+
+    Replaces all non-alphanumeric, non-hyphen characters with hyphens.
+    Must match the pattern in scripts/stage-extraction.sh:
+        echo "$DIR" | sed 's/[^a-zA-Z0-9-]/-/g'
+    """
+    import re
+    return re.sub(r'[^a-zA-Z0-9-]', '-', cwd)
+
+
 def get_data_dir() -> Path:
     """Get the plugin data directory (persists across plugin version updates).
 
@@ -61,8 +72,8 @@ def _migrate_db(legacy_db: Path, plugin_db: Path) -> None:
     shutil.copy2(legacy_db, backup_path)
     log.info("Backup created: %s", backup_path)
 
-    # Move (same filesystem = instant rename)
-    legacy_db.rename(plugin_db)
+    # Move (shutil.move handles cross-filesystem; same-fs is still instant)
+    shutil.move(str(legacy_db), str(plugin_db))
 
     # Symlink at legacy location for backward compat
     legacy_db.symlink_to(plugin_db)

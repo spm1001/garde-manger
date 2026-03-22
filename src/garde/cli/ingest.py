@@ -1,26 +1,16 @@
 """Ingest commands — index and process session files."""
 
 import json
-import re
-import sys
 from datetime import datetime, timezone
 from pathlib import Path as PathLib
 
 import click
 
+from ..config import encode_cwd
 from ..database import get_database
 from ..adapters.claude_code import ClaudeCodeSource
 from . import main
 from ._helpers import _create_basic_summary, _flatten_extraction_for_fts
-
-
-def _encode_cwd(cwd: str) -> str:
-    """Encode a directory path the way Claude Code does for project dirs.
-
-    Replaces all non-alphanumeric, non-hyphen characters with hyphens.
-    Must match the pattern in scripts/stage-extraction.sh.
-    """
-    return re.sub(r'[^a-zA-Z0-9-]', '-', cwd)
 
 
 @main.command()
@@ -262,7 +252,7 @@ def ingest_session(ctx, session_id, cwd):
     ts = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
 
     # Find the session JSONL file
-    encoded = _encode_cwd(cwd)
+    encoded = encode_cwd(cwd)
     sessions_dir = PathLib.home() / '.claude' / 'projects' / encoded
     session_file = sessions_dir / f'{session_id}.jsonl'
 
