@@ -52,6 +52,8 @@ The risk isn't "too many layers" — it's drift between them. A gotcha in MEMORY
 
 **`--limit 0` means zero, not unlimited.** In backfill/populate commands, `--limit 0` is SQL `LIMIT 0` (returns nothing). Use `--limit 10000` for "all."
 
+**`ingest-session` is the extraction boundary.** It must never call `claude -p` — only indexing and staged-extraction storage. If you're tempted to add LLM extraction to the session-end path, resist. That's what backfill is for. The staged extraction from /close is the only way to get rich extraction without backfill, and it works because the generating Claude already has full context.
+
 **Fork bomb prevention is non-negotiable.** `_call_claude()` sets `GARDE_SUBAGENT=1`. Session-start hooks must check this and exit early. Removing this guard creates exponential subprocess spawning.
 
 **`uv tool install` caches stale binaries.** After changing adapter code or CLI, the installed `garde` binary won't reflect changes until `uv tool install --reinstall`. The cron uses the installed binary, not `uv run` — so code changes don't take effect in cron until reinstall.
