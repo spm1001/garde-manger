@@ -18,6 +18,16 @@
 export PATH="$HOME/.local/bin:$PATH"
 command -v garde &>/dev/null || exit 0
 
+# Log to file (not /dev/null — future Claudes need debugging)
+LOGFILE="$HOME/.claude/logs/garde.log"
+mkdir -p "$(dirname "$LOGFILE")"
+
+# python3 is needed to parse hook JSON — if missing, log and bail
+if ! command -v python3 &>/dev/null; then
+    echo "[$(date -u '+%Y-%m-%d %H:%M:%S')] python3 not found — cannot parse hook input" >> "$LOGFILE"
+    exit 0
+fi
+
 # Read hook input (JSON with session_id, cwd)
 HOOK_INPUT=$(cat)
 
@@ -26,11 +36,10 @@ HOOK_CWD=$(python3 -c "import json,sys; d=json.loads(sys.stdin.read()); print(d.
 [ -z "$HOOK_CWD" ] && HOOK_CWD="$(pwd -P)"
 
 # Need session ID to proceed
-[ -z "$SESSION_ID" ] && exit 0
-
-# Log to file (not /dev/null — future Claudes need debugging)
-LOGFILE="$HOME/.claude/logs/garde.log"
-mkdir -p "$(dirname "$LOGFILE")"
+if [ -z "$SESSION_ID" ]; then
+    echo "[$(date -u '+%Y-%m-%d %H:%M:%S')] No session_id in hook input — skipping" >> "$LOGFILE"
+    exit 0
+fi
 
 # Single command does everything: find file, index, consume staged extraction
 garde ingest-session --session-id "$SESSION_ID" --cwd "$HOOK_CWD" \
