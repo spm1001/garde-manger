@@ -8,6 +8,23 @@ This repo was created on 2026-01-20 with a single "Initial commit" containing al
 
 The features below were developed over several weeks (Dec 2025 - Jan 2026) before the public release.
 
+## [0.3.1] - 2026-03-22
+
+### Fixed
+
+- **Cross-filesystem DB migration** — `shutil.move()` instead of `Path.rename()`, which fails across mount points.
+- **Concurrent DB access** — WAL journal mode + 5s busy timeout on connect. Session-end hook and cron backfill no longer risk `SQLITE_BUSY`.
+- **Silent hook failures** — Session-end hook now logs to `~/.claude/logs/garde.log` when `python3` is missing or `session_id` is empty, instead of exiting silently.
+- **Unused `sys` import** in ingest.py removed.
+
+### Changed
+
+- **`encode_cwd()` moved to `config.py`** — shared utility, importable by any module. Previously private to CLI.
+
+### Added
+
+- **6 CLI tests for `ingest-session`** — both paths (staged/safety-net), missing file, warmup skip, corrupt JSON, `encode_cwd` parity with bash. 128 total tests.
+
 ## [0.3.0] - 2026-03-22
 
 ### Added
