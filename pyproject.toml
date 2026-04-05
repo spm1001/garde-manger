@@ -7,6 +7,7 @@ requires-python = ">=3.11"
 dependencies = [
     "click>=8.1",
     "pyyaml>=6.0",
+    "deglacer",
 ]
 
 [project.optional-dependencies]
@@ -31,6 +32,9 @@ packages = ["src/garde"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+[tool.uv.sources]
+deglacer = { git = "https://github.com/spm1001/deglacer.git" }
 
 [dependency-groups]
 dev = [

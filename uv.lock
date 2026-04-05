@@ -29,10 +29,16 @@ wheels = [
 ]
 
 [[package]]
+name = "deglacer"
+version = "0.1.0"
+source = { git = "https://github.com/spm1001/deglacer.git#f1db08fb8ed22d86af337b7dd468cc9d9c19a95f" }
+
+[[package]]
 name = "garde-manger"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
+    { name = "deglacer" },
     { name = "pyyaml" },
 ]
 
@@ -49,6 +55,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "click", specifier = ">=8.1" },
+    { name = "deglacer", git = "https://github.com/spm1001/deglacer.git" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.0" },
     { name = "pyyaml", specifier = ">=6.0" },
 ]

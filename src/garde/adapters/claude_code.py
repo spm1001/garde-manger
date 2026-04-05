@@ -3,12 +3,10 @@
 Claude Code stores conversations as JSONL files in:
 ~/.claude/projects/{project-path}/*.jsonl
 
-Key differences from Claude.ai:
-- JSONL format (one JSON object per line)
-- No pre-generated summary - requires LLM summarization
-- Session UUID for identity (stable across conversation growth)
-- Threading via parentUuid
-- Tool results inline - skip in full_text() extraction
+Conversation text extraction uses deglacer (shared library) for
+compaction-aware parsing, deduplication, and system tag stripping.
+Metadata extraction (tool calls, files, skills, commits) is local
+since deglacer doesn't cover it.
 """
 
 from pathlib import Path
@@ -17,6 +15,8 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Iterator
+
+import deglacer as dg
 
 # Pattern to match git commit output: [branch hash] message
 COMMIT_PATTERN = re.compile(r"\[[\w\-/]+ ([a-f0-9]{7,})\] (.+?)(?:\n|$)")
@@ -58,6 +58,7 @@ class ClaudeCodeSource:
     project_path: str = ""    # e.g., "-Users-jane-Repos-foo"
     summary_text: str | None = None  # From type:summary entry if present
     metadata: dict = field(default_factory=dict)  # Tool usage metadata
+    _entries: list[dict] = field(default_factory=list, repr=False)  # Raw JSONL entries for deglacer
 
     @property
     def source_id(self) -> str:
@@ -96,124 +97,113 @@ class ClaudeCodeSource:
             if idx + 1 < len(path.parts) - 1:
                 project_path = path.parts[idx + 1]
 
-        with path.open() as f:
-            for line in f:
-                if not line.strip():
-                    continue
-                try:
-                    entry = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
+        # Use deglacer for robust JSONL parsing (handles encoding errors)
+        entries = dg.parse_session(str(path))
 
-                entry_type = entry.get('type')
+        for entry in entries:
+            entry_type = entry.get('type')
 
-                # Check for explicit summary entry (Claude Code creates these)
-                if entry_type == 'summary' and entry.get('summary'):
-                    summary_text = entry['summary']
-                    continue
+            # Check for explicit summary entry (Claude Code creates these)
+            if entry_type == 'summary' and entry.get('summary'):
+                summary_text = entry['summary']
+                continue
 
-                # Extract session metadata from first message entry
-                if session_id is None and entry_type in ('user', 'assistant'):
-                    session_id = entry.get('sessionId')
-                    agent_id = entry.get('agentId')
+            # Extract session metadata from first message entry
+            if session_id is None and entry_type in ('user', 'assistant'):
+                session_id = entry.get('sessionId')
+                agent_id = entry.get('agentId')
 
-                ts_str = entry.get('timestamp')
-                if ts_str:
-                    ts = datetime.fromisoformat(ts_str.replace('Z', '+00:00'))
-                    timestamps.append(ts)
+            ts_str = entry.get('timestamp')
+            if ts_str:
+                ts = datetime.fromisoformat(ts_str.replace('Z', '+00:00'))
+                timestamps.append(ts)
 
-                # Skip non-message entries
-                if entry_type not in ('user', 'assistant'):
-                    continue
+            # Skip non-message entries for metadata/message extraction
+            if entry_type not in ('user', 'assistant'):
+                continue
 
-                # Use timestamp for message if available
-                msg_ts = None
-                if ts_str:
-                    msg_ts = datetime.fromisoformat(ts_str.replace('Z', '+00:00'))
+            msg_ts = None
+            if ts_str:
+                msg_ts = datetime.fromisoformat(ts_str.replace('Z', '+00:00'))
 
-                msg_data = entry.get('message', {})
-                role = msg_data.get('role', entry_type)
+            msg_data = entry.get('message', {})
+            role = msg_data.get('role', entry_type)
 
-                # Extract content and metadata from content blocks
-                content = msg_data.get('content', '')
-                msg_has_tool_use = False  # Track if this message contains tool_use
-                if isinstance(content, list):
-                    text_parts = []
-                    for block in content:
-                        if not isinstance(block, dict):
-                            continue
+            # Extract metadata from content blocks (tool calls, files, skills, commits)
+            content = msg_data.get('content', '')
+            msg_has_tool_use = False
+            if isinstance(content, list):
+                text_parts = []
+                for block in content:
+                    if not isinstance(block, dict):
+                        continue
 
-                        block_type = block.get('type')
+                    block_type = block.get('type')
 
-                        if block_type == 'text':
-                            text_parts.append(block.get('text', ''))
+                    if block_type == 'text':
+                        text_parts.append(block.get('text', ''))
 
-                        elif block_type == 'tool_use':
-                            msg_has_tool_use = True
-                            # Extract tool usage metadata
-                            tool_name = block.get('name', '')
-                            tool_input = block.get('input', {})
+                    elif block_type == 'tool_use':
+                        msg_has_tool_use = True
+                        tool_name = block.get('name', '')
+                        tool_input = block.get('input', {})
 
-                            # Build input summary based on tool type
-                            input_summary = None
-                            if tool_name == 'Bash':
-                                cmd = tool_input.get('command', '')
-                                input_summary = cmd[:100] if cmd else None
-                            elif tool_name in ('Read', 'Write', 'Edit', 'Glob'):
-                                fp = tool_input.get('file_path', '')
-                                if fp:
-                                    files_touched.add(fp)
-                                    input_summary = fp
-                            elif tool_name == 'Skill':
-                                skill = tool_input.get('skill', '')
-                                if skill:
-                                    skills_used.add(skill)
-                                    input_summary = skill
-                            elif tool_name == 'Task':
-                                st = tool_input.get('subagent_type', '')
-                                prompt = tool_input.get('prompt', '')[:50]
-                                subagents_spawned.append({
-                                    'subagent_type': st,
-                                    'prompt_preview': prompt
-                                })
-                                input_summary = st
-
-                            tool_calls.append({
-                                'name': tool_name,
-                                'ts': ts_str,
-                                'input_summary': input_summary
+                        input_summary = None
+                        if tool_name == 'Bash':
+                            cmd = tool_input.get('command', '')
+                            input_summary = cmd[:100] if cmd else None
+                        elif tool_name in ('Read', 'Write', 'Edit', 'Glob'):
+                            fp = tool_input.get('file_path', '')
+                            if fp:
+                                files_touched.add(fp)
+                                input_summary = fp
+                        elif tool_name == 'Skill':
+                            skill = tool_input.get('skill', '')
+                            if skill:
+                                skills_used.add(skill)
+                                input_summary = skill
+                        elif tool_name == 'Task':
+                            st = tool_input.get('subagent_type', '')
+                            prompt = tool_input.get('prompt', '')[:50]
+                            subagents_spawned.append({
+                                'subagent_type': st,
+                                'prompt_preview': prompt
                             })
+                            input_summary = st
 
-                        elif block_type == 'tool_result':
-                            # Check for git commits in tool results
-                            result_content = block.get('content', '')
-                            if isinstance(result_content, str):
-                                for match in COMMIT_PATTERN.finditer(result_content):
-                                    git_commits.append({
-                                        'hash': match.group(1),
-                                        'message': match.group(2)
-                                    })
+                        tool_calls.append({
+                            'name': tool_name,
+                            'ts': ts_str,
+                            'input_summary': input_summary
+                        })
 
-                    content = '\n'.join(text_parts) if text_parts else content
+                    elif block_type == 'tool_result':
+                        result_content = block.get('content', '')
+                        if isinstance(result_content, str):
+                            for match in COMMIT_PATTERN.finditer(result_content):
+                                git_commits.append({
+                                    'hash': match.group(1),
+                                    'message': match.group(2)
+                                })
 
-                # Capture first non-meta user message for title fallback
-                if first_user_content is None and role == 'user':
-                    # Skip meta messages (e.g., context injection)
-                    if not entry.get('isMeta'):
-                        if isinstance(content, str) and content:
-                            # Skip compaction prompts for title (not always marked as isMeta)
-                            if not content.startswith('Context: This summary will be shown'):
-                                first_user_content = content
+                content = '\n'.join(text_parts) if text_parts else content
 
-                messages.append(ClaudeCodeMessage(
-                    uuid=entry.get('uuid', ''),
-                    parent_uuid=entry.get('parentUuid'),
-                    role=role,
-                    content=content,
-                    timestamp=msg_ts or datetime.now(),
-                    is_tool_result='toolUseResult' in entry,
-                    has_tool_use=msg_has_tool_use,
-                ))
+            # Capture first non-meta user message for title fallback
+            if first_user_content is None and role == 'user':
+                if not entry.get('isMeta'):
+                    if isinstance(content, str) and content:
+                        if not content.startswith('Context: This summary will be shown'):
+                            first_user_content = content
+
+            messages.append(ClaudeCodeMessage(
+                uuid=entry.get('uuid', ''),
+                parent_uuid=entry.get('parentUuid'),
+                role=role,
+                content=content,
+                timestamp=msg_ts or datetime.now(),
+                is_tool_result='toolUseResult' in entry,
+                has_tool_use=msg_has_tool_use,
+            ))
 
         # Generate title: prefer summary, fall back to first user message
         title = path.stem
@@ -282,25 +272,30 @@ class ClaudeCodeSource:
             messages=messages,
             project_path=project_path,
             summary_text=summary_text,
-            metadata=metadata
+            metadata=metadata,
+            _entries=entries,
         )
 
+    def _build_turns(self) -> list[dict]:
+        """Build conversation turns via deglacer (cached)."""
+        if not hasattr(self, '_turns_cache'):
+            self._turns_cache = dg.build_turns(self._entries)
+        return self._turns_cache
+
     def full_text(self) -> str:
-        """Extract text content, skipping tool results (too noisy)."""
-        texts = []
-        for msg in self.messages:
-            if msg.is_tool_result:
-                continue
-            content = msg.content
-            if isinstance(content, str) and content:
-                texts.append(content)
-        return '\n\n'.join(texts)
+        """Extract text content via deglacer.
+
+        Handles compaction boundaries, deduplicates streaming entries,
+        strips system tags, and preserves compaction summaries.
+        """
+        return dg.format_text(self._build_turns())
 
     def messages_with_offsets(self) -> list:
         """Return message metadata with character offsets into full_text.
 
         Used for semantic chunking - provides the structural information
         needed to detect topic boundaries (timestamps, role changes, tool use).
+        Offsets map into the deglacer-formatted text from full_text().
 
         Returns:
             List of MessageData objects with char_offset/char_length mapping
@@ -308,30 +303,67 @@ class ClaudeCodeSource:
         """
         from ..llm import MessageData
 
+        turns = self._build_turns()
+        full = self.full_text()
+
+        # Build a set of timestamps where tool_use occurred (from original entries)
+        tool_use_timestamps = set()
+        for entry in self._entries:
+            if entry.get('type') == 'assistant':
+                ts = entry.get('timestamp')
+                for block in entry.get('message', {}).get('content', []):
+                    if isinstance(block, dict) and block.get('type') == 'tool_use':
+                        tool_use_timestamps.add(ts)
+                        break
+
         result = []
         current_offset = 0
 
-        for msg in self.messages:
-            if msg.is_tool_result:
+        for turn in turns:
+            role = turn['role']
+            text = turn['text']
+            ts_raw = turn.get('timestamp')
+
+            if role == 'system':
+                # Compaction summary — find it in the formatted output
+                idx = full.find(text, current_offset)
+                if idx >= 0:
+                    result.append(MessageData(
+                        timestamp=None,
+                        role='user',
+                        char_offset=idx,
+                        char_length=len(text),
+                        is_tool_result=False,
+                        has_tool_use=False,
+                    ))
+                    current_offset = idx + len(text)
                 continue
 
-            content = msg.content
-            if not isinstance(content, str) or not content:
+            ts = None
+            if ts_raw:
+                if isinstance(ts_raw, str):
+                    ts = datetime.fromisoformat(ts_raw.replace('Z', '+00:00'))
+                else:
+                    ts = ts_raw
+
+            # Find the role header in formatted output
+            header = f'── {role.upper()} ──'
+            idx = full.find(header, current_offset)
+            if idx < 0:
                 continue
 
-            content_len = len(content)
+            content_start = idx + len(header) + 1
+            content_len = len(text)
 
             result.append(MessageData(
-                timestamp=msg.timestamp,
-                role=msg.role,
-                char_offset=current_offset,
+                timestamp=ts,
+                role='user' if role == 'human' else role,
+                char_offset=content_start,
                 char_length=content_len,
-                is_tool_result=msg.is_tool_result,
-                has_tool_use=msg.has_tool_use,
+                is_tool_result=False,
+                has_tool_use=ts_raw in tool_use_timestamps,
             ))
-
-            # Account for separator ('\n\n' between messages)
-            current_offset += content_len + 2  # +2 for '\n\n'
+            current_offset = content_start + content_len
 
         return result
 

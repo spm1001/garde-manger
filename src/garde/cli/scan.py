@@ -154,7 +154,8 @@ def scan(ctx, dry_run, source_filter):
 
                 exists = existing is not None
 
-                # Store source metadata
+                # Store source metadata (include session_id for backfill dedup)
+                metadata = {'session_id': source.session_id} if source.session_id else None
                 db.upsert_source(
                     source_id=source.source_id,
                     source_type='handoff',
@@ -164,6 +165,7 @@ def scan(ctx, dry_run, source_filter):
                     updated_at=source.date,
                     project_path=source.project_path,
                     content_hash=mtime_str,
+                    metadata=metadata,
                 )
 
                 # Use full text as summary (handoffs are already distilled)

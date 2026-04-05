@@ -207,41 +207,45 @@ def test_clean_title_strips_command_tags():
 def test_messages_with_offsets(tmp_jsonl):
     path = tmp_jsonl([
         {"type": "user", "timestamp": "2025-01-01T10:00:00Z", "sessionId": "abc123",
-         "message": {"role": "user", "content": "First user message"}},  # 18 chars
+         "message": {"role": "user", "content": "First user message"}},
         {"type": "assistant", "timestamp": "2025-01-01T10:01:00Z",
-         "message": {"role": "assistant", "content": "Assistant response here"}},  # 23 chars
+         "message": {"id": "msg1", "role": "assistant", "content": [
+             {"type": "text", "text": "Assistant response here"}
+         ]}},
         {"type": "user", "timestamp": "2025-01-01T10:02:00Z",
-         "message": {"role": "user", "content": "Second user message"}},  # 19 chars
+         "message": {"role": "user", "content": "Second user message"}},
     ])
 
     src = ClaudeCodeSource.from_file(path)
+    full = src.full_text()
     messages = src.messages_with_offsets()
 
     assert len(messages) == 3
 
-    # First message
+    # Verify offsets map correctly into full_text (contract test)
+    for msg in messages:
+        chunk = full[msg.char_offset:msg.char_offset + msg.char_length]
+        assert len(chunk) == msg.char_length
+        assert chunk.strip()  # not empty
+
+    # Check roles preserved
     assert messages[0].role == 'user'
-    assert messages[0].char_offset == 0
-    assert messages[0].char_length == 18
-
-    # Second message (offset = first length + separator '\n\n')
     assert messages[1].role == 'assistant'
-    assert messages[1].char_offset == 20  # 18 + 2
-    assert messages[1].char_length == 23
-
-    # Third message
     assert messages[2].role == 'user'
-    assert messages[2].char_offset == 45  # 20 + 23 + 2
-    assert messages[2].char_length == 19
+
+    # Verify actual content at offsets
+    assert full[messages[0].char_offset:messages[0].char_offset + messages[0].char_length] == "First user message"
+    assert full[messages[1].char_offset:messages[1].char_offset + messages[1].char_length] == "Assistant response here"
+    assert full[messages[2].char_offset:messages[2].char_offset + messages[2].char_length] == "Second user message"
 
 
 # messages_with_offsets tracks tool_use in messages
 def test_messages_with_offsets_tool_use(tmp_jsonl):
     path = tmp_jsonl([
         {"type": "assistant", "timestamp": "2025-01-01T10:00:00Z", "sessionId": "abc123",
-         "message": {"role": "assistant", "content": [
+         "message": {"id": "msg1", "role": "assistant", "content": [
              {"type": "text", "text": "Let me read that file"},
-             {"type": "tool_use", "name": "Read", "input": {"file_path": "/foo"}}
+             {"type": "tool_use", "id": "tu1", "name": "Read", "input": {"file_path": "/foo"}}
          ]}},
     ])
 

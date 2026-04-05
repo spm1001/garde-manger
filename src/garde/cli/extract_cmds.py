@@ -97,11 +97,35 @@ def backfill(ctx, limit, source_type, skip_short, dry_run):
         # Find sources without extractions
         conn = db.connect()
 
+        # Count total unextracted before filtering
+        count_sql = """
+            SELECT COUNT(*) FROM sources s
+            LEFT JOIN extractions e ON s.id = e.source_id
+            WHERE e.source_id IS NULL
+        """
+        count_params = []
+        if source_type:
+            count_sql += " AND s.source_type = ?"
+            count_params.append(source_type)
+        total_unextracted = conn.execute(count_sql, count_params).fetchone()[0]
+
+        # Find sources without extractions, skipping claude_code sessions
+        # that already have a handoff-section-parse extraction
         sql = """
             SELECT s.id, s.source_type, s.title, s.path
             FROM sources s
             LEFT JOIN extractions e ON s.id = e.source_id
             WHERE e.source_id IS NULL
+            AND (s.source_type != 'claude_code' OR NOT EXISTS (
+                SELECT 1 FROM sources h
+                JOIN extractions he ON h.id = he.source_id
+                WHERE h.source_type = 'handoff'
+                AND he.model_used = 'handoff-section-parse'
+                AND (
+                    json_extract(h.metadata, '$.session_id') = SUBSTR(s.id, 13)
+                    OR s.id LIKE 'claude_code:' || SUBSTR(h.id, -8) || '%'
+                )
+            ))
         """
         params = []
 
@@ -114,11 +138,33 @@ def backfill(ctx, limit, source_type, skip_short, dry_run):
 
         rows = conn.execute(sql, params).fetchall()
 
+        # Count how many were skipped by the handoff filter
+        skipped_sql = """
+            SELECT COUNT(*) FROM sources s
+            LEFT JOIN extractions e ON s.id = e.source_id
+            WHERE e.source_id IS NULL
+            AND s.source_type = 'claude_code'
+            AND EXISTS (
+                SELECT 1 FROM sources h
+                JOIN extractions he ON h.id = he.source_id
+                WHERE h.source_type = 'handoff'
+                AND he.model_used = 'handoff-section-parse'
+                AND (
+                    json_extract(h.metadata, '$.session_id') = SUBSTR(s.id, 13)
+                    OR s.id LIKE 'claude_code:' || SUBSTR(h.id, -8) || '%'
+                )
+            )
+        """
+        handoff_skipped = conn.execute(skipped_sql).fetchone()[0]
+
         if not rows:
-            click.echo("No sources need backfill.")
+            if handoff_skipped:
+                click.echo(f"No sources need backfill ({handoff_skipped} skipped — have handoff extractions).")
+            else:
+                click.echo("No sources need backfill.")
             return
 
-        click.echo(f"Found {len(rows)} sources without extractions")
+        click.echo(f"Found {len(rows)} sources to process (of {total_unextracted} unextracted, {handoff_skipped} skipped — have handoff extractions)")
 
         if dry_run:
             for row in rows:

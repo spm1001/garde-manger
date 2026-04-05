@@ -36,9 +36,8 @@ uv run garde prune --yes             # Mark stale (preserves extractions)
 - `src/garde/llm.py` — LLM calls via `claude -p` (Opus 4.6, Max subscription), semantic chunking
 - `src/garde/extraction.py` — Entity extraction orchestration
 - `src/garde/config.py` — DB path resolution, config loading
-- `src/garde/adapters/*.py` — Source format parsers (8 types)
+- `src/garde/adapters/*.py` — Source format parsers (8 types). The `claude_code` adapter uses `deglacer` (shared library) for compaction-aware JSONL parsing; metadata extraction (tools, files, skills, commits) stays local.
 - `hooks/` — Plugin hooks (SessionStart, SessionEnd)
-- `scripts/` — Helper scripts (stage-extraction.sh)
 
 ## Plugin Hooks
 
@@ -121,6 +120,8 @@ All LLM calls go through `_call_claude()` in `llm.py`, which invokes `claude -p`
 
 Adapter protocol plan is tracked in bon.
 
+**Backfill dedup:** Backfill automatically skips `claude_code` sessions that already have a `handoff-section-parse` extraction. Matching uses `session_id` from handoff metadata (primary) or stem-based UUID prefix (fallback). The skip count is reported in backfill output.
+
 **Backfill resilience:** Each extraction commits immediately, so interrupted backfill is resumable (just rerun). Use `nohup` for large batches — background tasks timeout. No progress counter — use `grep -c "✓" logfile` to monitor.
 
 **`--limit 0` gotcha:** In backfill/populate commands, `--limit 0` means SQL `LIMIT 0` (returns nothing), not "unlimited". Use a large number like `--limit 10000` instead.
@@ -134,6 +135,6 @@ Use `/titans` for thorough review — three parallel Opus agents (Epimetheus/hin
 ## Testing
 
 ```bash
-uv run python -m pytest              # All tests (122)
+uv run python -m pytest              # All tests (154)
 uv run python -m pytest tests/test_X.py -v   # Specific test
 ```
