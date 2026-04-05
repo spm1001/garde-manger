@@ -6,7 +6,6 @@ import click
 
 from ..database import get_database
 from . import main
-from ._helpers import _flatten_extraction_for_fts
 
 
 @main.command()
