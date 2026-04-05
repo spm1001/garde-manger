@@ -10,9 +10,9 @@ The split between summaries and extractions is load-bearing. Summaries are cheap
 
 ## The adapter architecture
 
-Eight source type adapters, each implementing `discover_*()` and a `*Source` dataclass with `from_file()`, `full_text()`, and `source_id`. Claude Code is the most complex — JSONL parsing, metadata extraction (tool calls, files touched, skills used, git commits), subagent detection. The CC adapter's `discover_claude_code()` globs `**/*.jsonl` under `~/.claude/projects/` to find sessions including subagents in nested `subagents/` directories.
+Eight source type adapters, each implementing `discover_*()` and a `*Source` dataclass with `from_file()`, `full_text()`, and `source_id`. The CC adapter is now a thin wrapper around deglacer (shared JSONL parsing library) for conversation text — `full_text()` delegates to `deglacer.build_turns()` + `format_text()`, which handles compaction boundaries, streaming message dedup, and system tag stripping. Metadata extraction (tool calls, files touched, skills used, git commits, subagent detection) stays local since deglacer doesn't cover it. The `ClaudeCodeMessage` dataclass and `messages` list survive because ingest.py, browse.py, and _helpers.py still consume them — migration tracked in bds-dutori.
 
-The adapter protocol is informal — each adapter follows the pattern but there's no abstract base class. ADAPTER_AUDIT.md tracks the plan to formalize it. The CLI (`cli.py`, ~2100 lines) is a monolith with near-identical scan loops for each source type. Registry pattern refactor is tracked in bon.
+The adapter protocol is informal — each adapter follows the pattern but there's no abstract base class. The CLI is a monolith with near-identical scan loops for each source type.
 
 ## The extraction pipeline (Apr 2026)
 
@@ -54,7 +54,7 @@ Garde sits in a temporal stack of persistence layers, each serving a different t
 
 Garde's primary role is L1 (raw text search) and L5 (structured extractions). L1 is immediate utility — "find that session." L5 is accumulated wisdom — "what did we learn." Both are consumed primarily by future Claudes (86% of searches are Claude-initiated).
 
-**Known gap (Apr 2026):** L1 quality is poor. The claude_code adapter's `full_text()` is a naive join that doesn't handle compaction boundaries, duplicate message IDs, or system tag stripping. ccconv (in trousse's deglacer skill) handles all of these correctly. Sharing ccconv's parsing quality with garde's adapter is tracked work.
+**L1 quality improved (Apr 2026):** The claude_code adapter now uses deglacer for `full_text()` — compaction-aware, dedup, system tag stripping. 135 sessions showed >20% text improvement; compacted sessions saw up to 95% noise reduction. The gap that remains: existing indexed sessions have stale FTS text from the old parser. Re-indexing all claude_code sources with the new `full_text()` is tracked in bon-mesezu.
 
 The risk isn't "too many layers" — it's drift between them, and quality gaps within layers.
 
