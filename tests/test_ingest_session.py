@@ -68,21 +68,6 @@ def _create_session(env, cwd, session_id, messages=None):
     return path
 
 
-def _stage_extraction(env, session_id):
-    """Create a staged extraction file."""
-    data = {
-        "summary": "Fixed auth module bug",
-        "arc": {"started_with": "auth bug", "key_turns": ["found root cause"], "ended_at": "fixed"},
-        "builds": [{"what": "auth fix", "details": "patched token refresh"}],
-        "learnings": [{"insight": "tokens expire silently", "why_it_matters": "hard to debug", "context": "auth module"}],
-        "friction": [],
-        "patterns": ["debug-then-fix"],
-        "open_threads": [],
-    }
-    staged = env['pending_dir'] / f'{session_id}.json'
-    staged.write_text(json.dumps(data))
-    return staged
-
 
 def test_ingest_session_indexes_without_staged(runner, env):
     """Safety-net path: indexes session, defers extraction to backfill."""
@@ -101,32 +86,6 @@ def test_ingest_session_indexes_without_staged(runner, env):
     source = env['db'].get_source(f'claude_code:{session_id}')
     assert source is not None
 
-
-def test_ingest_session_consumes_staged_extraction(runner, env):
-    """Fast path: indexes + stores staged extraction + deletes staged file."""
-    session_id = "eeee-ffff-0000-1111"
-    cwd = "/home/user/project"
-    _create_session(env, cwd, session_id)
-    staged = _stage_extraction(env, session_id)
-
-    with patch('garde.config.Path.home', return_value=env['home']):
-        result = runner.invoke(main, [
-            'ingest-session', '--session-id', session_id, '--cwd', cwd,
-        ])
-
-    assert result.exit_code == 0
-    # Source indexed
-    source = env['db'].get_source(f'claude_code:{session_id}')
-    assert source is not None
-    # Extraction stored
-    extraction = env['db'].connect().execute(
-        "SELECT * FROM extractions WHERE source_id = ?",
-        (f'claude_code:{session_id}',)
-    ).fetchone()
-    assert extraction is not None
-    assert extraction['model_used'] == 'claude-code-context'
-    # Staged file consumed
-    assert not staged.exists()
 
 
 def test_ingest_session_missing_file(runner, env):
@@ -159,26 +118,6 @@ def test_ingest_session_skips_warmup(runner, env):
     source = env['db'].get_source(f'claude_code:{session_id}')
     assert source is None  # not indexed
 
-
-def test_ingest_session_bad_staged_json_keeps_file(runner, env):
-    """Corrupt staged extraction: logged, file preserved for retry."""
-    session_id = "bad-json-session"
-    cwd = "/home/user/project"
-    _create_session(env, cwd, session_id)
-    staged = env['pending_dir'] / f'{session_id}.json'
-    staged.write_text("not valid json {{{")
-
-    with patch('garde.config.Path.home', return_value=env['home']):
-        result = runner.invoke(main, [
-            'ingest-session', '--session-id', session_id, '--cwd', cwd,
-        ])
-
-    assert result.exit_code == 0
-    # Source still indexed despite bad extraction
-    source = env['db'].get_source(f'claude_code:{session_id}')
-    assert source is not None
-    # Staged file preserved (not deleted on error)
-    assert staged.exists()
 
 
 def test_encode_cwd_matches_bash():

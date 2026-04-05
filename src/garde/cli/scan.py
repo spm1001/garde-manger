@@ -12,7 +12,7 @@ from ..adapters.bon import discover_bon, BonSource
 from ..adapters.knowledge import discover_knowledge, KnowledgeSource
 from ..adapters.amp import discover_amp, AmpSource
 from . import main
-from ._helpers import _create_basic_summary
+from ._helpers import _create_basic_summary, _flatten_extraction_for_fts
 
 
 @main.command()
@@ -132,17 +132,27 @@ def scan(ctx, dry_run, source_filter):
         handoff_new = 0
         handoff_updated = 0
 
+        handoff_extracted = 0
+        handoff_skipped = 0
+
         if scan_handoffs:
             click.echo(f"\nScanning handoff files...")
             for source in discover_handoffs(config):
-                exists = db.source_exists(source.source_id)
+                existing = db.get_source(source.source_id)
+                mtime_str = str(source.mtime)
+
+                if existing and existing.get('content_hash') == mtime_str:
+                    handoff_skipped += 1
+                    continue
 
                 if dry_run:
-                    status = "exists" if exists else "new"
+                    status = "exists" if existing else "new"
                     click.echo(f"  [{status}] {source.source_id}: {source.title[:60]}...")
-                    if not exists:
+                    if not existing:
                         handoff_new += 1
                     continue
+
+                exists = existing is not None
 
                 # Store source metadata
                 db.upsert_source(
@@ -153,10 +163,10 @@ def scan(ctx, dry_run, source_filter):
                     created_at=source.date,
                     updated_at=source.date,
                     project_path=source.project_path,
+                    content_hash=mtime_str,
                 )
 
                 # Use full text as summary (handoffs are already distilled)
-                # raw_text same as summary_text for handoffs (they're already small)
                 full_text = source.full_text()
                 db.upsert_summary(
                     source_id=source.source_id,
@@ -164,6 +174,32 @@ def scan(ctx, dry_run, source_filter):
                     has_presummary=True,
                     raw_text=full_text,
                 )
+
+                # Extract structured fields from handoff sections (free, no LLM)
+                extraction = source.to_extraction()
+                if extraction:
+                    db.upsert_extraction(
+                        source_id=source.source_id,
+                        summary=extraction.get('summary'),
+                        arc=extraction.get('arc'),
+                        builds=extraction.get('builds'),
+                        learnings=extraction.get('learnings'),
+                        friction=extraction.get('friction'),
+                        patterns=extraction.get('patterns'),
+                        open_threads=extraction.get('open_threads'),
+                        model_used='handoff-section-parse',
+                    )
+                    # Sync to FTS for searchability
+                    rich_text = _flatten_extraction_for_fts(extraction)
+                    if rich_text:
+                        db.upsert_summary(
+                            source_id=source.source_id,
+                            summary_text=rich_text,
+                            has_presummary=True,
+                            raw_text=full_text,
+                        )
+                    handoff_extracted += 1
+
                 db.mark_processed(source.source_id)
 
                 if exists:
@@ -435,7 +471,7 @@ def scan(ctx, dry_run, source_filter):
             click.echo(f"\nIndexed: {total_new} new, {total_updated} updated")
             click.echo(f"  Claude Code: {new_count} new, {updated_count} updated")
             click.echo(f"  Claude.ai: {ai_new} new, {ai_updated} updated")
-            click.echo(f"  Handoffs: {handoff_new} new, {handoff_updated} updated")
+            click.echo(f"  Handoffs: {handoff_new} new, {handoff_updated} updated, {handoff_skipped} unchanged, {handoff_extracted} extracted")
             click.echo(f"  Cloud sessions: {cloud_new} new, {cloud_updated} updated")
             click.echo(f"  Local markdown: {local_md_new} new, {local_md_updated} updated, {local_md_skipped} unchanged")
             click.echo(f"  Bon: {bon_new} new, {bon_updated} updated, {bon_skipped} unchanged")

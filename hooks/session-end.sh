@@ -1,11 +1,11 @@
 #!/bin/bash
-# SessionEnd hook: index the closing session and consume any staged extraction.
+# SessionEnd hook: index the closing session.
 #
 # All logic lives in `garde ingest-session` (Python). This script is a thin
 # wrapper: subagent guards, CLI check, stdin parsing, then one command.
 #
-# Fast path (from /close): index + store staged extraction (no LLM, seconds)
-# Safety-net path: index only (extraction deferred to `garde backfill`)
+# Extraction is handled separately: handoff scan produces extractions from
+# section parse (free, no LLM). Sessions without handoffs use `garde backfill`.
 
 # Subagent guards (critical — fork bomb prevention)
 # garde's LLM pipeline sets GARDE_SUBAGENT=1 in subprocess env.
@@ -41,7 +41,7 @@ if [ -z "$SESSION_ID" ]; then
     exit 0
 fi
 
-# Single command does everything: find file, index, consume staged extraction
+# Single command: find file, index source + summary
 garde ingest-session --session-id "$SESSION_ID" --cwd "$HOOK_CWD" \
     >> "$LOGFILE" 2>&1 || true
 

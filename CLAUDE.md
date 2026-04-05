@@ -27,7 +27,7 @@ uv run garde prune --yes             # Mark stale (preserves extractions)
   - `__init__.py` — main group, config/glossary loading
   - `scan.py` — source discovery and indexing
   - `ingest.py` — `process`, `index`, and `ingest-session` commands
-  - `extract_cmds.py` — `extract`, `backfill`, `store-extraction`
+  - `extract_cmds.py` — `extract`, `backfill`, `extract-prompt`
   - `browse.py` — `search`, `drill`
   - `entities.py` — entity resolution
   - `fts.py` — FTS rebuild, `status`
@@ -57,9 +57,8 @@ Session ends
     → garde ingest-session --session-id X --cwd Y
       → finds JSONL file at ~/.claude/projects/{encoded_cwd}/{session_id}.jsonl
       → indexes source + summary
-      → checks ~/.claude/.pending-extractions/{session_id}.json
-        → if staged: store extraction + delete staged file (fast, no LLM)
-        → if not staged: index only, extraction deferred to backfill
+      → extraction deferred: handoff scan produces extractions from section parse,
+        sessions without handoffs use garde backfill
     → logs to ~/.claude/logs/garde.log
 ```
 
@@ -77,34 +76,31 @@ The database lives at `~/.claude/plugins/data/garde-manger-batterie-de-savoir/me
 
 Config files (`config.yaml`, `glossary.yaml`) stay at `~/.claude/memory/` — they're user config, not plugin data.
 
-## Staged Extraction Contract
+## Handoff-Native Extraction
 
-This is the cross-repo contract between bon's `/close` skill and garde's session-end hook.
-If you change fields here, update bon's `/close` skill too (in `skills/close/SKILL.md`,
-search for "extraction JSON") — and vice versa.
+Handoffs are the primary source of extractions. The adapter parses markdown sections
+directly into extraction fields — no LLM call needed.
 
-**Producer:** bon's `/close` skill generates extraction JSON and calls `scripts/stage-extraction.sh`.
+**Section → extraction field mapping:**
+- `Done` → `builds` (each bullet becomes `{what, details}`)
+- `Gotchas` → `friction` (each bullet becomes `{problem, resolution}`)
+- `Risks` → `friction` (prefixed with `[risk]`)
+- `Reflection` → `learnings` (paragraphs become `{insight, why_it_matters, context}`)
+- `Learned` → `patterns` (full text as single entry)
+- `Next` → `open_threads` (each bullet)
+- `purpose:` preamble → `summary`
 
-**Staging path:** `~/.claude/.pending-extractions/{session_id}.json`
+**Both formats supported:**
+- Old: flat h2 sections (`## Done`, `## Learned`, `## Next`)
+- New (fond-v1): two zones (`## Now` with `### Gotchas/Risks/Next/Commands`, `## Compost` with `### Done/Reflection/Learned`)
 
-**JSON schema:**
-```json
-{
-    "summary": "2-3 sentences",
-    "arc": {"started_with": "...", "key_turns": ["..."], "ended_at": "..."},
-    "builds": [{"what": "...", "details": "..."}],
-    "learnings": [{"insight": "...", "why_it_matters": "...", "context": "..."}],
-    "friction": [{"problem": "...", "resolution": "..."}],
-    "patterns": ["..."],
-    "open_threads": ["..."]
-}
-```
+**Discovery locations:**
+- `~/.claude/handoffs/` (legacy)
+- `.bon/handoffs/` across repos under `~/Repos/` (fond-v1)
 
-**Consumer:** `garde ingest-session` (called by session-end hook). Stores with `model_used: "claude-code-context"`.
+**Model audit trail:** Extractions from section parse use `model_used: "handoff-section-parse"`.
 
-**Filename convention:** The session_id is the UUID from the JSONL filename, which matches the internal `sessionId` field in the JSONL content.
-
-**CWD encoding:** `sed 's/[^a-zA-Z0-9-]/-/g'` (or `re.sub(r'[^a-zA-Z0-9-]', '-', cwd)` in Python). Must be identical in `stage-extraction.sh` and `ingest.py:_encode_cwd()`.
+**Staged extraction pipeline (retired):** The old `/close` → `~/.claude/.pending-extractions/` → `ingest-session` path has been removed. Handoff scan produces extractions directly. Sessions without handoffs are deferred to `garde backfill`.
 
 ## LLM Backend
 
@@ -117,7 +113,8 @@ All LLM calls go through `_call_claude()` in `llm.py`, which invokes `claude -p`
 **Model audit trail:** Database `model_used` values:
 - `claude-sonnet-4-20250514` — pre-migration extractions (API-based)
 - `claude-opus-4-6` — post-migration (CLI-based, Max subscription)
-- `claude-code-context` — in-session extraction from /close (no subprocess)
+- `claude-code-context` — legacy in-session extraction from /close (no longer produced)
+- `handoff-section-parse` — extraction from handoff markdown sections (no LLM, free)
 - `skipped:content_too_short` — stub records for sources with <100 chars content
 
 ## Known Issues / Tech Debt

@@ -1,7 +1,6 @@
 """Extraction commands — LLM-powered extraction and backfill."""
 
 import json
-import sys
 
 import click
 
@@ -204,12 +203,10 @@ def extract_prompt(ctx, source_id):
     """Output the extraction prompt for a source.
 
     Outputs the hybrid extraction prompt with session content filled in.
-    Designed for in-context extraction from Claude Code (Max subscription).
+    Useful for debugging extraction prompts or manual extraction.
 
-    Usage from /close:
-        PROMPT=$(uv run garde extract-prompt claude_code:abc123)
-        # Claude processes prompt, generates extraction JSON
-        echo '$JSON' | uv run garde store-extraction claude_code:abc123
+    Example:
+        uv run garde extract-prompt claude_code:abc123
     """
     from ..extraction import get_source_content
     from ..llm import HYBRID_EXTRACTION_PROMPT
@@ -240,78 +237,3 @@ def extract_prompt(ctx, source_id):
     click.echo(prompt)
 
 
-@main.command('store-extraction')
-@click.argument('source_id')
-@click.option('--model', default='claude-code-context', help='Model name for audit trail')
-@click.pass_context
-def store_extraction(ctx, source_id, model):
-    """Store extraction results from stdin.
-
-    Reads JSON from stdin and stores in the extractions table.
-    FTS index is updated automatically.
-
-    Expected JSON format:
-    {
-        "summary": "...",
-        "arc": {"started_with": "...", "key_turns": [...], "ended_at": "..."},
-        "builds": [{"what": "...", "details": "..."}],
-        "learnings": [{"insight": "...", "why_it_matters": "...", "context": "..."}],
-        "friction": [{"problem": "...", "resolution": "..."}],
-        "patterns": ["..."],
-        "open_threads": ["..."]
-    }
-    """
-    db = get_database()
-
-    with db:
-        source = db.get_source(source_id)
-        if not source:
-            click.echo(f"Source not found: {source_id}", err=True)
-            raise SystemExit(1)
-
-    # Read JSON from stdin
-    try:
-        input_text = sys.stdin.read()
-        # Find JSON in input (may have preamble from Claude)
-        start = input_text.find("{")
-        end = input_text.rfind("}") + 1
-        if start >= 0 and end > start:
-            json_str = input_text[start:end]
-            data = json.loads(json_str)
-        else:
-            click.echo("No JSON object found in input", err=True)
-            raise SystemExit(1)
-    except json.JSONDecodeError as e:
-        click.echo(f"Invalid JSON: {e}", err=True)
-        raise SystemExit(1)
-
-    # Store extraction and sync full flattened text to FTS
-    with db:
-        db.upsert_extraction(
-            source_id=source_id,
-            summary=data.get('summary'),
-            arc=data.get('arc'),
-            builds=data.get('builds'),
-            learnings=data.get('learnings'),
-            friction=data.get('friction'),
-            patterns=data.get('patterns'),
-            open_threads=data.get('open_threads'),
-            model_used=model,
-        )
-
-        # Flatten full extraction (builds, learnings, friction) into FTS
-        # upsert_extraction only syncs the summary field — this adds the rest
-        rich_text = _flatten_extraction_for_fts(data)
-        if rich_text:
-            db.upsert_summary(
-                source_id=source_id,
-                summary_text=rich_text,
-                has_presummary=True,
-            )
-
-    click.echo(f"Stored extraction for {source_id}")
-
-    # Show summary of what was stored
-    builds_count = len(data.get('builds', []))
-    learnings_count = len(data.get('learnings', []))
-    click.echo(f"  {builds_count} builds, {learnings_count} learnings")

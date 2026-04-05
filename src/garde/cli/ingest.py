@@ -1,6 +1,5 @@
 """Ingest commands — index and process session files."""
 
-import json
 from datetime import datetime, timezone
 from pathlib import Path as PathLib
 
@@ -10,7 +9,7 @@ from ..config import encode_cwd
 from ..database import get_database
 from ..adapters.claude_code import ClaudeCodeSource
 from . import main
-from ._helpers import _create_basic_summary, _flatten_extraction_for_fts
+from ._helpers import _create_basic_summary
 
 
 @main.command()
@@ -172,10 +171,6 @@ def index(ctx, path, quiet):
     Parses a JSONL session file, creates source + summary records in the
     database, and marks it processed. Does NOT run entity or hybrid extraction.
 
-    Designed for use with staged extractions from /close — the session-end
-    hook calls `garde index` to create the source record, then pipes the
-    pre-generated extraction JSON into `garde store-extraction`.
-
     Example:
         garde index ~/.claude/projects/-Users-foo/abc123.jsonl
     """
@@ -234,17 +229,15 @@ def index(ctx, path, quiet):
 @click.option('--cwd', required=True, help='Working directory of the session')
 @click.pass_context
 def ingest_session(ctx, session_id, cwd):
-    """Index a session from its ID, consuming any staged extraction.
+    """Index a session from its ID.
 
     Designed as the single entry point for session-end hooks. Encapsulates
-    file discovery, indexing, and staged extraction storage in Python —
-    the hook script is a thin wrapper calling this command.
+    file discovery and indexing in Python — the hook script is a thin wrapper
+    calling this command.
 
-    Fast path (staged extraction from /close):
-        Index + store extraction from ~/.claude/.pending-extractions/{session_id}.json
-
-    Safety-net path (no staged extraction):
-        Index only — extraction deferred to `garde backfill`.
+    Extraction is handled separately: handoff scan produces extractions from
+    section parse (free, no LLM). Sessions without handoffs are deferred to
+    `garde backfill`.
 
     Example:
         garde ingest-session --session-id abc123 --cwd /home/user/project
@@ -301,44 +294,5 @@ def ingest_session(ctx, session_id, cwd):
         db.mark_processed(source.source_id)
 
     click.echo(f"[{ts}] Indexed: {source.source_id} ({source.title[:50]})", err=True)
-
-    # Check for staged extraction (fast path from /close)
-    pending_dir = PathLib.home() / '.claude' / '.pending-extractions'
-    staged_file = pending_dir / f'{session_id}.json'
-
-    if staged_file.exists():
-        try:
-            data = json.loads(staged_file.read_text())
-
-            with db:
-                db.upsert_extraction(
-                    source_id=source.source_id,
-                    summary=data.get('summary'),
-                    arc=data.get('arc'),
-                    builds=data.get('builds'),
-                    learnings=data.get('learnings'),
-                    friction=data.get('friction'),
-                    patterns=data.get('patterns'),
-                    open_threads=data.get('open_threads'),
-                    model_used='claude-code-context',
-                )
-
-                # Sync to FTS
-                rich_text = _flatten_extraction_for_fts(data)
-                if rich_text:
-                    db.upsert_summary(
-                        source_id=source.source_id,
-                        summary_text=rich_text,
-                        has_presummary=True,
-                    )
-
-            staged_file.unlink()
-            builds = len(data.get('builds', []))
-            learnings = len(data.get('learnings', []))
-            click.echo(f"[{ts}] Stored staged extraction: {builds} builds, {learnings} learnings", err=True)
-
-        except (json.JSONDecodeError, OSError) as e:
-            click.echo(f"[{ts}] Staged extraction error (kept file): {e}", err=True)
-            # Don't delete the staged file — let backfill or manual retry handle it
-    else:
-        click.echo(f"[{ts}] No staged extraction — deferred to backfill", err=True)
+    # Extraction deferred: handoff scan produces extractions from section
+    # parse (free, no LLM). Sessions without handoffs use garde backfill.
