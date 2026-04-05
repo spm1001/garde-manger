@@ -1,12 +1,12 @@
 # Garde-manger — Understanding
 
-Persistent, searchable memory across Claude sessions. FTS5 search over session summaries, LLM-extracted semantic data (builds, learnings, friction, patterns), and human-in-the-loop entity resolution. Part of the kitchen brigade: garde-manger is the cold station — preservation, storage, retrieval.
+The larder. Persistent, searchable memory across Claude sessions. FTS5 search over session summaries, structured extractions (builds, learnings, friction, patterns), and raw conversation text. Part of the kitchen brigade: garde-manger is the cold station — indexing, storage, retrieval. It does not make the stock; it stores what the kitchen produces.
 
 ## The data model
 
 Six tables in SQLite. **Sources** are the index — every session, handoff, bon item, and Amp thread gets a row with a composite `source_id` (e.g., `claude_code:uuid`, `amp:T-uuid`). **Summaries** hold pre-existing summaries (from CC's compaction or /close) plus raw text, backed by an FTS5 virtual table for full-text search. **Extractions** are the LLM-generated semantic layer — summary, arc (narrative structure), builds, learnings, friction, patterns, open threads. A source without an extraction is searchable by title; one with an extraction is searchable by meaning.
 
-The split between summaries and extractions is load-bearing. Summaries are cheap (parsed from the JSONL, no LLM call). Extractions are expensive (`claude -p` Opus 4.6, ~30s each, Max subscription not API). This means scan is fast and free; backfill is slow and should run in background. The cron reflects this: scan every 30 minutes, backfill 200/day at 3am.
+The split between summaries and extractions is load-bearing. Summaries are cheap (parsed from source files, no LLM call). Extractions come from two paths: handoff section parse (free, high quality — the primary path since Apr 2026) or LLM backfill for sessions without handoffs (expensive, fallback only). Scan is fast and free; backfill is slow and reserved for unclosed sessions.
 
 ## The adapter architecture
 
@@ -14,13 +14,17 @@ Eight source type adapters, each implementing `discover_*()` and a `*Source` dat
 
 The adapter protocol is informal — each adapter follows the pattern but there's no abstract base class. ADAPTER_AUDIT.md tracks the plan to formalize it. The CLI (`cli.py`, ~2100 lines) is a monolith with near-identical scan loops for each source type. Registry pattern refactor is tracked in bon.
 
-## The extraction pipeline
+## The extraction pipeline (Apr 2026)
 
-Two paths to extraction, both producing identical JSON:
+Three paths to extraction, reflecting garde's role as store rather than producer:
 
-**Backfill path:** `garde backfill` → finds unextracted sources → `_call_claude()` in `llm.py` → `claude -p --model claude-opus-4-6 --allowedTools "" --no-session-persistence --output-format json` → parse result → store. Each extraction commits immediately, so interrupted backfill is resumable. The `GARDE_SUBAGENT=1` env var guard in `_call_claude()` is critical — without it, the subprocess triggers session-start hooks which spawn more subprocesses recursively.
+**Handoff section parse (primary):** `garde scan --source handoffs` discovers handoffs in `~/.claude/handoffs/` and `.bon/handoffs/` across repos, calls `HandoffSource.to_extraction()` to map markdown sections to extraction fields (Done→builds, Gotchas→friction, Reflection→learnings, Learned→patterns, Next→open_threads). Free, high quality. `model_used: "handoff-section-parse"`. Both old flat-h2 and new fond-v1 two-zone formats supported. mtime-based skip for efficient re-scans.
 
-**In-session path:** The /close skill generates extraction JSON during the live session (when Claude has full context) and stages it to `~/.claude/.pending-extractions/{session_id}.json`. The session-end hook detects this and uses `garde index` + `garde store-extraction` instead of spawning a subprocess. The `model_used` for staged extractions is `claude-code-context`. This path is free (no additional LLM call) and higher quality (Claude has full context, not just the raw text).
+**Overnight composting (planned, bds-zowetu):** Bon's `scripts/compost.sh` will read unprocessed handoffs, call garde's handoff adapter, and store extractions. This is the designed path — bon orchestrates, garde stores. Composting also synthesizes Learned sections into understanding.md as a safety net.
+
+**Backfill (fallback):** `garde backfill` → finds unextracted sources → `_call_claude()` in `llm.py` → `claude -p` Opus 4.6 → parse → store. For sessions without handoffs only. Each extraction commits immediately (resumable). The `GARDE_SUBAGENT=1` env var guard is critical for fork bomb prevention.
+
+**Retired (Apr 2026):** The staged extraction pipeline (`/close` → `~/.claude/.pending-extractions/` → `ingest-session`) has been removed. The `store-extraction` CLI command has been removed. Handoff section parse replaces both.
 
 ## The multi-machine problem (Mar 2026)
 
@@ -34,25 +38,31 @@ Data from 4,946 sessions (Nov 2025 – Mar 2026): 452 search commands in 84 non-
 
 Garde's primary consumer is future Claudes, not the human. This shapes priorities: extraction quality matters more than search UX.
 
-## The memory landscape
+## The knowledge pyramid (Apr 2026)
 
-Garde is one of several persistence layers, each serving a different temporal and cognitive function:
+Garde sits in a temporal stack of persistence layers, each serving a different timescale:
 
-- **CLAUDE.md** — instructions (how to behave)
-- **understanding.md** — prose portrait (what this project feels like, design values, landmines)
-- **MEMORY.md** — narrow gotchas (weakest layer, overlaps with understanding.md)
-- **Handoffs** — session-to-session baton
-- **Garde extractions** — searchable semantic summaries for future Claudes
-- **Bon items** — tactical state
-- **Raw JSONL** — ground truth
+| Layer | Timescale | What | Where |
+|-------|-----------|------|-------|
+| Live context | This session | Full conversation, tools, files | CC context window (lost at /exit) |
+| Raw text (L1) | Hours–days | Searchable full conversations | Garde: claude_code source type + FTS5 |
+| Handoffs (L2) | Next session | Tactical baton — gotchas, next steps | .bon/handoffs/ (git) |
+| understanding.md (L3) | Days–weeks | Project soul, design values | .bon/ (git), synthesized at /open |
+| MEMORY.md (L4) | Weeks–months | Typed observations | ~/.claude/ (Anthropic's autoDream) |
+| Garde extractions (L5) | Months–forever | Searchable semantic archive | Garde DB — filled by handoff parse + composting |
+| Bon items | Cross-session | Work state | .bon/ (orthogonal to knowledge stack) |
 
-The risk isn't "too many layers" — it's drift between them. A gotcha in MEMORY.md that contradicts understanding.md, or a handoff referencing an archived bon item.
+Garde's primary role is L1 (raw text search) and L5 (structured extractions). L1 is immediate utility — "find that session." L5 is accumulated wisdom — "what did we learn." Both are consumed primarily by future Claudes (86% of searches are Claude-initiated).
+
+**Known gap (Apr 2026):** L1 quality is poor. The claude_code adapter's `full_text()` is a naive join that doesn't handle compaction boundaries, duplicate message IDs, or system tag stripping. ccconv (in trousse's deglacer skill) handles all of these correctly. Sharing ccconv's parsing quality with garde's adapter is tracked work.
+
+The risk isn't "too many layers" — it's drift between them, and quality gaps within layers.
 
 ## Landmines
 
 **`--limit 0` means zero, not unlimited.** In backfill/populate commands, `--limit 0` is SQL `LIMIT 0` (returns nothing). Use `--limit 10000` for "all."
 
-**`ingest-session` is the extraction boundary.** It must never call `claude -p` — only indexing and staged-extraction storage. If you're tempted to add LLM extraction to the session-end path, resist. That's what backfill is for. The staged extraction from /close is the only way to get rich extraction without backfill, and it works because the generating Claude already has full context.
+**`ingest-session` is the indexing boundary.** It indexes the source + summary, nothing more. Extraction happens elsewhere: handoff scan (section parse, free) or backfill (LLM, fallback). The staged extraction pipeline was removed in Apr 2026 — don't re-add it.
 
 **Fork bomb prevention is non-negotiable.** `_call_claude()` sets `GARDE_SUBAGENT=1`. Session-start hooks must check this and exit early. Removing this guard creates exponential subprocess spawning.
 
@@ -62,6 +72,17 @@ The risk isn't "too many layers" — it's drift between them. A gotcha in MEMORY
 
 **Mac and tube have 2,349 duplicate JSONL files.** Same session UUIDs exist under both `-Users-modha-*` and `-home-modha-*` paths due to claude-config syncing. Garde deduplicates by source_id at index time (only 103 Mac-only sessions were genuinely new), but the duplicate files waste ~1.9 GB on disk.
 
-## Current state (Mar 2026)
+## Garde's role in the fond architecture (Apr 2026)
 
-6,739 sources indexed across all four machines (hezza, tube, kube, Mac). 549 extractions, ~4,500 pending. Backfill running via cron (200/day). Dolt migration spiked and queued (bon-forebi) — schema maps cleanly, FULLTEXT works but with a table-alias limitation, size is favourable (98 MB Dolt vs 279 MB SQLite). The Dolt value proposition is strongest when combined with bon migration — shared infrastructure enabling multi-agent coordination across machines.
+Fond is the architecture for how knowledge flows from sessions to durable memory. Bon owns the lifecycle (open/close/compost). Garde is the larder — it stores what the kitchen produces.
+
+- **Bon's composting** (scripts/compost.sh, planned) calls garde's handoff adapter to produce extractions, then stores them in garde's DB
+- **Garde's scan** indexes sources across 8 types and runs handoff section parse for extraction
+- **Garde's backfill** is the fallback for unclosed sessions — expensive but necessary for coverage
+- **Garde's search/MCP** is how future Claudes query across all sessions
+
+The interface between bon and garde is the handoff adapter: `HandoffSource.to_extraction()`. Built in bds-kevapu (Apr 2026).
+
+## Current state (Apr 2026)
+
+8,723 sources on hezza: 5,628 claude_code, 1,663 handoffs, 1,357 bon, 75 amp. 179 handoffs now have free section-parse extractions. Backfill cron handles the rest (200/day). Dolt migration spiked and queued (bon-forebi) — schema maps cleanly, deferred pending fond stabilisation.
