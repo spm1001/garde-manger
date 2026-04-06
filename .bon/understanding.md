@@ -10,7 +10,7 @@ The split between summaries and extractions is load-bearing. Summaries are cheap
 
 ## The adapter architecture
 
-Eight source type adapters, each implementing `discover_*()` and a `*Source` dataclass with `from_file()`, `full_text()`, and `source_id`. The CC adapter is now a thin wrapper around deglacer (shared JSONL parsing library) for conversation text — `full_text()` delegates to `deglacer.build_turns()` + `format_text()`, which handles compaction boundaries, streaming message dedup, and system tag stripping. Metadata extraction (tool calls, files touched, skills used, git commits, subagent detection) stays local since deglacer doesn't cover it. The `ClaudeCodeMessage` dataclass and `messages` list survive because ingest.py, browse.py, and _helpers.py still consume them — migration tracked in bds-dutori.
+Eight source type adapters, each implementing `discover_*()` and a `*Source` dataclass with `from_file()`, `full_text()`, and `source_id`. The CC adapter is a thin wrapper around deglacer (shared JSONL parsing library) for conversation text — `full_text()` delegates to `deglacer.build_turns()` + `format_text()`, which handles compaction boundaries, streaming message dedup, and system tag stripping. Metadata extraction (tool calls, files touched, skills used, git commits, subagent detection) stays local since deglacer doesn't cover it. All consumers (ingest.py, browse.py, _helpers.py) now use deglacer turns via `source._build_turns()`. The `ClaudeCodeMessage` dataclass was removed in Apr 2026 (bds-dutori). Emptiness guards use `source._entries` (raw JSONL entries).
 
 The adapter protocol is informal — each adapter follows the pattern but there's no abstract base class. The CLI is a monolith with near-identical scan loops for each source type.
 
