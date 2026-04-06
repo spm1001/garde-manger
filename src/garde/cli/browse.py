@@ -561,13 +561,14 @@ def drill(ctx, source_id, full, outline, turn):
         elif source_type == 'claude_code':
             from ..adapters.claude_code import ClaudeCodeSource
             conv = ClaudeCodeSource.from_file(path)
-            for msg in conv.messages:
-                if msg.is_tool_result:
+            for turn in conv._build_turns():
+                if turn['role'] == 'system':
                     continue
-                role = "USER" if msg.role == 'user' else "ASSISTANT"
-                content = msg.content if isinstance(msg.content, str) else str(msg.content)
-                if content:
-                    messages.append((role, content))
+                role = turn['role'].upper()
+                if role == 'HUMAN':
+                    role = 'USER'
+                if turn['text']:
+                    messages.append((role, turn['text']))
 
         else:
             click.echo(f"Unknown source type: {source_type}")

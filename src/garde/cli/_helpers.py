@@ -34,27 +34,22 @@ def _create_basic_summary(source) -> str:
     if source.summary_text:
         return source.summary_text
 
-    # Check for compacted conversation
-    first_user_msg = None
-    for msg in source.messages:
-        if msg.role == 'user' and not msg.is_tool_result:
-            content = msg.content
-            if isinstance(content, str) and content.strip():
-                first_user_msg = content.strip()
-                break
+    # Use deglacer turns (tag-stripped, deduplicated, tool results excluded)
+    turns = source._build_turns()
+    human_turns = [t for t in turns if t['role'] == 'human']
 
-    # If compacted, try to extract the real summary
-    if first_user_msg and _is_compacted_conversation(first_user_msg):
-        # Look for summary in any message
-        for msg in source.messages:
-            content = msg.content if isinstance(msg.content, str) else ''
-            extracted = _extract_compacted_summary(content)
+    # Check for compacted conversation
+    first_user_text = human_turns[0]['text'].strip() if human_turns else None
+
+    if first_user_text and _is_compacted_conversation(first_user_text):
+        # Look for summary tags in any turn
+        for t in turns:
+            extracted = _extract_compacted_summary(t['text'])
             if extracted:
                 return extracted
         # Fallback: use embedded content after "User:" marker
-        if 'User:' in first_user_msg:
-            # Extract first embedded user message
-            parts = first_user_msg.split('User:', 1)
+        if 'User:' in first_user_text:
+            parts = first_user_text.split('User:', 1)
             if len(parts) > 1:
                 embedded = parts[1].split('Agent:', 1)[0].strip()
                 if embedded and len(embedded) > 20:
@@ -64,15 +59,12 @@ def _create_basic_summary(source) -> str:
     parts = [source.title]
 
     user_messages = []
-    for msg in source.messages:
-        if msg.role == 'user' and not msg.is_tool_result:
-            content = msg.content
-            if isinstance(content, str) and content.strip():
-                # Skip compaction prompts
-                if not _is_compacted_conversation(content):
-                    user_messages.append(content.strip())
-            if len(user_messages) >= 3:
-                break
+    for t in human_turns:
+        text = t['text'].strip()
+        if text and not _is_compacted_conversation(text):
+            user_messages.append(text)
+        if len(user_messages) >= 3:
+            break
 
     if user_messages:
         parts.append("\n\n".join(user_messages[:3]))

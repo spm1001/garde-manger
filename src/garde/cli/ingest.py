@@ -52,7 +52,7 @@ def process(ctx, path, no_extract, no_hybrid, quiet):
         return
 
     # Skip warmup/empty sessions
-    if source.title.lower() == 'warmup' or not source.messages:
+    if source.title.lower() == 'warmup' or not source._entries:
         if not quiet:
             click.echo(f"Skipping empty/warmup session: {session_path.name}")
         return
@@ -190,7 +190,7 @@ def index(ctx, path, quiet):
             click.echo(f"Error parsing {session_path}: {e}")
         return
 
-    if source.title.lower() == 'warmup' or not source.messages:
+    if source.title.lower() == 'warmup' or not source._entries:
         if not quiet:
             click.echo(f"Skipping empty/warmup session: {session_path.name}")
         return
@@ -265,7 +265,7 @@ def ingest_session(ctx, session_id, cwd):
         click.echo(f"[{ts}] Error parsing {session_file.name}: {e}", err=True)
         return
 
-    if source.title.lower() == 'warmup' or not source.messages:
+    if source.title.lower() == 'warmup' or not source._entries:
         click.echo(f"[{ts}] Skipping empty/warmup: {session_file.name}", err=True)
         return
 

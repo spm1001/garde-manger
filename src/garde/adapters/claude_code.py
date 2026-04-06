@@ -35,17 +35,6 @@ def clean_title(text: str) -> str:
 
 
 @dataclass
-class ClaudeCodeMessage:
-    uuid: str
-    parent_uuid: str | None
-    role: str  # 'user' or 'assistant'
-    content: str | list
-    timestamp: datetime
-    is_tool_result: bool = False
-    has_tool_use: bool = False  # True if message contains tool_use blocks
-
-
-@dataclass
 class ClaudeCodeSource:
     """Claude Code conversation from JSONL file."""
     path: Path
@@ -54,7 +43,6 @@ class ClaudeCodeSource:
     title: str                # Extracted from summary entry or first user message
     created_at: datetime
     updated_at: datetime
-    messages: list[ClaudeCodeMessage] = field(default_factory=list)
     project_path: str = ""    # e.g., "-Users-jane-Repos-foo"
     summary_text: str | None = None  # From type:summary entry if present
     metadata: dict = field(default_factory=dict)  # Tool usage metadata
@@ -76,7 +64,6 @@ class ClaudeCodeSource:
 
     @classmethod
     def from_file(cls, path: Path) -> 'ClaudeCodeSource':
-        messages = []
         session_id = None
         agent_id = None
         project_path = ""
@@ -131,7 +118,6 @@ class ClaudeCodeSource:
 
             # Extract metadata from content blocks (tool calls, files, skills, commits)
             content = msg_data.get('content', '')
-            msg_has_tool_use = False
             if isinstance(content, list):
                 text_parts = []
                 for block in content:
@@ -144,7 +130,6 @@ class ClaudeCodeSource:
                         text_parts.append(block.get('text', ''))
 
                     elif block_type == 'tool_use':
-                        msg_has_tool_use = True
                         tool_name = block.get('name', '')
                         tool_input = block.get('input', {})
 
@@ -195,16 +180,6 @@ class ClaudeCodeSource:
                         if not content.startswith('Context: This summary will be shown'):
                             first_user_content = content
 
-            messages.append(ClaudeCodeMessage(
-                uuid=entry.get('uuid', ''),
-                parent_uuid=entry.get('parentUuid'),
-                role=role,
-                content=content,
-                timestamp=msg_ts or datetime.now(),
-                is_tool_result='toolUseResult' in entry,
-                has_tool_use=msg_has_tool_use,
-            ))
-
         # Generate title: prefer summary, fall back to first user message
         title = path.stem
         title_source = first_user_content
@@ -214,23 +189,23 @@ class ClaudeCodeSource:
             title_source = summary_text
         elif not first_user_content:
             # No summary and no non-compacted user message
-            # Try to extract from compaction prompt (first user message)
-            for msg in messages:
-                if msg.role == 'user':
-                    content = msg.content if isinstance(msg.content, str) else ''
-                    if content.startswith('Context: This summary will be shown'):
-                        # First try: extract from <summary> tags (Claude's response to compaction)
-                        if '<summary>' in content and '</summary>' in content:
-                            start = content.rfind('<summary>') + 9  # Use rfind to get last summary tag
-                            end = content.rfind('</summary>')
+            # Try to extract from compaction prompt (first user entry)
+            for e in entries:
+                if e.get('type') == 'user' and e.get('message', {}).get('role') == 'user':
+                    raw = e.get('message', {}).get('content', '')
+                    if not isinstance(raw, str):
+                        continue
+                    if raw.startswith('Context: This summary will be shown'):
+                        if '<summary>' in raw and '</summary>' in raw:
+                            start = raw.rfind('<summary>') + 9
+                            end = raw.rfind('</summary>')
                             if start < end:
-                                extracted = content[start:end].strip()
+                                extracted = raw[start:end].strip()
                                 if extracted and len(extracted) > 10:
                                     title_source = extracted
                                     break
-                        # Second try: extract from "User:" marker (original prompt)
-                        if 'User:' in content:
-                            parts = content.split('User:', 1)
+                        if 'User:' in raw:
+                            parts = raw.split('User:', 1)
                             if len(parts) > 1:
                                 embedded = parts[1].split('Agent:', 1)[0].strip()
                                 if embedded and len(embedded) > 10:
@@ -269,7 +244,6 @@ class ClaudeCodeSource:
             title=title,
             created_at=min(timestamps) if timestamps else datetime.now(),
             updated_at=max(timestamps) if timestamps else datetime.now(),
-            messages=messages,
             project_path=project_path,
             summary_text=summary_text,
             metadata=metadata,
@@ -366,11 +340,6 @@ class ClaudeCodeSource:
             current_offset = content_start + content_len
 
         return result
-
-    def message_count(self) -> int:
-        """Count non-tool messages."""
-        return sum(1 for m in self.messages if not m.is_tool_result)
-
 
 def _get_quick_summary(path: Path) -> str | None:
     """Quick scan for summary entry without full parse.
