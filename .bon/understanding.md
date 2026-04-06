@@ -86,3 +86,5 @@ The interface between bon and garde is the handoff adapter: `HandoffSource.to_ex
 ## Current state (Apr 2026)
 
 8,723 sources on hezza: 5,628 claude_code, 1,663 handoffs, 1,357 bon, 75 amp. 179 handoffs now have free section-parse extractions. Backfill cron handles the rest (200/day). Dolt migration spiked and queued (bon-forebi) — schema maps cleanly, deferred pending fond stabilisation.
+
+**Structured extraction search (bon-cutora, Apr 2026):** Planned feature to use SQLite's `json_each()` to search within extraction JSON arrays (builds, learnings, friction, patterns, open_threads) at the SQL level rather than fetching blobs and parsing in Python. Two modes: `--in` flag filters FTS results to sessions with matching extraction entries, `--show-matches` returns individual matching entries across sessions. No new tables or migrations — pure query-time capability over existing data. Materialized tables and virtual tables were evaluated and deferred as premature at current scale (~7K extractions).
