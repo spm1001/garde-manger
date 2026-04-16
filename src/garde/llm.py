@@ -12,8 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-# Single model for all extractions — Opus 4.6 via Max subscription
-MODEL = "claude-opus-4-6"
+MODEL = os.environ.get("GARDE_MODEL", "opus")
 
 
 @dataclass

@@ -72,4 +72,4 @@ class TestCallClaude:
                 _call_claude("test")
 
     def test_model_constant(self):
-        assert MODEL == "claude-opus-4-6"
+        assert MODEL == "opus"
