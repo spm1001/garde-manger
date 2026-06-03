@@ -1,92 +1,68 @@
 # Garde-manger — Understanding
 
-> **⚠️ DECOMMISSIONING (2026-06-03).** This document describes garde as a *living* system — that picture is being retired. We decided to **decommission garde** and fold its function into `~/notes` (clean finished sessions → `notes/raw/` via deglacer; search becomes Claude+grep; cross-machine via *notes'* Syncthing — **not** by syncing this repo). Plan: **gm-kudasu** + 7 actions; start at **gm-gumopi**. See the latest `.bon/handoffs/`. **Do not delete the DB** — it is the sole surviving copy of 106 off-disk sessions until the notes export is verified. The Dolt / multi-machine "future" described below is superseded.
+> **Status: decommissioning (decided 2026-06-03).** garde is being retired. Its function — clean finished sessions → keep → find — folds into `~/notes`. This document is now a *teardown map*, not a portrait of a living system. The plan is **gm-kudasu** + 7 ordered actions; start at **gm-gumopi**. **Do not delete the DB** until the notes export is verified on both machines — it is the sole surviving copy of 106 off-disk sessions.
 
-The larder. Persistent, searchable memory across Claude sessions. FTS5 search over session summaries, structured extractions (builds, learnings, friction, patterns), and raw conversation text. Part of the kitchen brigade: garde-manger is the cold station — indexing, storage, retrieval. It does not make the stock; it stores what the kitchen produces.
+## The decision, in one breath
 
-## The data model
+garde-the-database is over-built for its actual job. The job was only ever "clean finished sessions and make them findable." Measuring the payload collapsed the edifice: deglacer compresses raw CC JSONL ~74× (4.9 GB → 67 MB), the real corpus is ~1,300 substantial sessions / **~41 MB** of deglacer-clean text, and the 692 MB DB is ~10× FTS-index bloat over that. deglacer is now a shared library, so it survives garde. `~/notes` already solves cross-machine (Syncthing) and is building a raw→digest→promote pipeline (`notes-sobute`) whose cleaning step *is* deglacer.
 
-Six tables in SQLite. **Sources** are the index — every session, handoff, bon item, and Amp thread gets a row with a composite `source_id` (e.g., `claude_code:uuid`, `amp:T-uuid`). **Summaries** hold pre-existing summaries (from CC's compaction or /close) plus raw text, backed by an FTS5 virtual table for full-text search. **Extractions** are the LLM-generated semantic layer — summary, arc (narrative structure), builds, learnings, friction, patterns, open threads. A source without an extraction is searchable by title; one with an extraction is searchable by meaning.
+So: **retire garde-the-DB, keep garde-the-idea inside notes.** The corpus folds into `notes/raw/`. Search becomes Claude+grep over that folder — at 41 MB, a Claude with grep out-searches BM25 because it *judges* relevance rather than just ranking it. No database needed.
 
-The split between summaries and extractions is load-bearing. Summaries are cheap (parsed from source files, no LLM call). Extractions come from two paths: handoff section parse (free, high quality — the primary path since Apr 2026) or LLM backfill for sessions without handoffs (expensive, fallback only). Scan is fast and free; backfill is slow and reserved for unclosed sessions.
+## The plan — gm-kudasu, 7 ordered actions
 
-## The adapter architecture
+Strict sequence; each step's reason is the gate on the next.
 
-Eight source type adapters, each implementing `discover_*()` and a `*Source` dataclass with `from_file()`, `full_text()`, and `source_id`. The CC adapter is a thin wrapper around deglacer (shared JSONL parsing library) for conversation text — `full_text()` delegates to `deglacer.build_turns()` + `format_text()`, which handles compaction boundaries, streaming message dedup, and system tag stripping. Metadata extraction (tool calls, files touched, skills used, git commits, subagent detection) stays local since deglacer doesn't cover it. All consumers (ingest.py, browse.py, _helpers.py) now use deglacer turns via `source._build_turns()`. The `ClaudeCodeMessage` dataclass was removed in Apr 2026 (bds-dutori). Emptiness guards use `source._entries` (raw JSONL entries).
+| # | Action | What it does | Why it gates the next |
+|---|--------|--------------|----------------------|
+| 0 | **gm-gumopi** | Pin archive format (foldering / dating / frontmatter) + decommission done-criteria | Everything below writes into this format — decide it first |
+| 1 | **gm-firaso** | Tune capture criteria + decide AMP in or out | Sets what the corpus *contains* before we build it |
+| 2 | **gm-kenave** | Wire + **live-verify** the new `/close` → deglacer → notes hook | The replacement capture path; must be proven live before any teardown |
+| 3 | **gm-jewode** | Build the canonical historical corpus into `notes/raw/` — garde's one last parse, incl. the 106-session ark | The actual preservation; depends on the format + capture rules above |
+| 4 | **gm-jerapu** | Pass the verify-before-burn gate | Proves the export is complete + grep-findable on both machines before anything is destroyed |
+| 5 | **gm-damoku** | Repoint garde's consumers (memory skill, hooks, cron, `garde search`) off the dying tool | Nothing should still call garde when the engines go off |
+| 6 | **gm-pamadu** | Engines off, DB cold-backed-up, repo archived | The end — only after 2–5 are green |
 
-The adapter protocol is informal — each adapter follows the pattern but there's no abstract base class. The CLI is a monolith with near-identical scan loops for each source type.
+**Done when** (canonical: `gm-kudasu --done`): Mac greps a 6-month-old session with Hezza unreachable; the next real `/close` drops a fresh dated markdown into `notes/raw/` that Syncs to Mac; nothing references garde (memory skill, hooks, cron, `garde search` all repointed or retired); the 106 off-disk sessions are confirmed present in notes; the DB is retired to a cold backup (**not deleted**); the repo is archived on GitHub.
 
-## The extraction pipeline (Apr 2026)
+**Archive format** is pinned (`gm-gumopi`, 2026-06-03): flat files in `notes/raw/claude/code/`, kebab filenames `YYYY-MM-DD-HHMM-<slug>-<uuid8>.md`, frontmatter = converter fields + `machine` + `tier`. Full spec lives where the converters do: `~/notes/raw/claude/_converters/ARCHIVE-FORMAT.md`.
 
-Three paths to extraction, reflecting garde's role as store rather than producer:
+## Three risks that shape the order
 
-**Handoff section parse (primary):** `garde scan --source handoffs` discovers handoffs in `~/.claude/handoffs/` and `.bon/handoffs/` across repos, calls `HandoffSource.to_extraction()` to map markdown sections to extraction fields (Done→builds, Gotchas→friction, Reflection→learnings, Learned→patterns, Next→open_threads). Free, high quality. `model_used: "handoff-section-parse"`. Both old flat-h2 and new fond-v1 two-zone formats supported. mtime-based skip for efficient re-scans.
+1. **The DB is the sole ark for 106 irreplaceable sessions.** garde's DB reaches back to 26 Nov 2025; the oldest JSONL on disk is only 9 Jan 2026. So 1,645 off-disk sources (106 substantial, ~3.2 MB) survive **only** in the DB — CC's local 30-day janitor (`cleanupPeriodDays`) purged their JSONLs before it was bumped to `99999`. **Do not delete the DB** until the notes export is reconciled, Synced to Mac, and grep-proven on *both* machines. gm-jerapu (verify gate) and gm-pamadu (DB → cold backup, not deletion) exist for exactly this.
 
-**Overnight composting (planned, bds-zowetu):** Bon's `scripts/compost.sh` will read unprocessed handoffs, call garde's handoff adapter, and store extractions. This is the designed path — bon orchestrates, garde stores. Composting also synthesizes Learned sections into understanding.md as a safety net.
+2. **The capture-gap in teardown order.** The new `/close` → deglacer → notes hook (gm-kenave) must be **live and verified** *before* garde's own hooks are torn down (gm-pamadu) — otherwise sessions fall through the gap between the two systems. Replacement before teardown, always.
 
-**Backfill (fallback):** `garde backfill` → finds unextracted sources → `_call_claude()` in `llm.py` → `claude -p` Opus 4.6 → parse → store. For sessions without handoffs only. Each extraction commits immediately (resumable). The `GARDE_SUBAGENT=1` env var guard is critical for fork bomb prevention.
+3. **The tree is mid-migration.** Don't start the file-moving work until Mac's repo migration settles, or you'll get rug-pulls — the previous session lost its cwd to exactly that. This repo moved from `~/repos/batterie/garde-manger` to `~/repos/spm1001/garde-manger` mid-session (part of the `batterie/* → {spm1001,itv,third-party}/` owner-bucket migration). **Hezza is canonical** (clean 3-bucket layout); **Mac is the satellite** (loose top-level repos, cornichon still in `batterie/`).
 
-**Retired (Apr 2026):** The staged extraction pipeline (`/close` → `~/.claude/.pending-extractions/` → `ingest-session`) has been removed. The `store-extraction` CLI command has been removed. Handoff section parse replaces both.
+## The sync model — do not conflate the two layers
 
-## The multi-machine problem (Mar 2026)
+Sameer flagged this explicitly. Two independent sync mechanisms:
 
-Garde's SQLite database is local to each machine. Sessions live in `~/.claude/projects/` which may or may not be synced via git (claude-config repo). The consolidation pattern discovered in March 2026: rsync sessions from all machines to one primary (hezza), then scan + backfill. Extractions can be imported between SQLite databases via SQL dump + INSERT OR IGNORE + FTS rebuild.
+- **`~/notes` → Syncthing** (Hezza ↔ Mac, sub-2s on LAN). The garde corpus folds into `notes/raw/` *precisely so* Mac sees the whole archive via **notes' Syncthing** — that IS the cross-machine transparency mechanism.
+- **`~/repos` → git** (Hezza canonical, Mac auto-pulls). `.git` is deliberately **not** Syncthing'd (corruption risk). garde-manger lives in `~/repos`, so it syncs by **git**, not Syncthing.
 
-This is the strongest argument for migrating to Dolt (bon-forebi). Dolt would give each machine a clone that pushes/pulls structured data with row-level merge — eliminating the rsync + manual merge dance entirely. The FTS5 → MySQL FULLTEXT rewrite is part of that migration (bon-forebi step 3) — fundamentally different APIs, ~50 lines in database.py, contained but real.
+We did **not** plan to Syncthing `~/repos`. The archive's transparency comes from landing in **notes**, not from where this repo lives.
 
-## Who actually uses garde search
+## What garde was — reference for the one-last-parse (gm-jewode)
 
-Data from 4,946 sessions (Nov 2025 – Mar 2026): 452 search commands in 84 non-dev sessions. **86% are Claude-initiated** — Claude searches autonomously during sessions, not because the user asked. The user almost never searches directly; when they want a specific session, they necromance the JSONL with jq. Usage peaked in Jan-Feb 2026 (195-219 searches/month) then dropped to 14 in March — caused by moving to hezza where the DB had only 173 sessions indexed. Not a usage pattern change; a data availability gap.
+Enough of the old architecture to do the export correctly. Everything below is *how it works*, kept only because gm-jewode needs it.
 
-Garde's primary consumer is future Claudes, not the human. This shapes priorities: extraction quality matters more than search UX.
+**deglacer is the load-bearing survivor.** The CC adapter (`src/garde/adapters/`) is a thin wrapper: `full_text()` delegates to `deglacer.build_turns()` + `format_text()`, which handles compaction boundaries, streaming-message dedup, and system-tag stripping. This is exactly the cleaning step the export needs — and it's a shared git library, so it outlives garde. Metadata extraction (tools, files, skills, commits) stays local to the adapter.
 
-## The knowledge pyramid (Apr 2026)
+**Where the data is.** DB lives at `~/.claude/plugins/data/garde-manager-batterie-de-savoir/memory.db` (plugin data dir, persists across plugin updates; legacy location `~/.claude/memory/memory.db` may be a symlink). Config (`config.yaml`, `glossary.yaml`) stays at `~/.claude/memory/`.
 
-Garde sits in a temporal stack of persistence layers, each serving a different timescale:
+**The divergence between machines (as of 2026-06-03).** Both run garde (SessionEnd hook fires), but badly diverged:
+- **Hezza healthy** — ~9,919 sources, ~7,613 extractions, current to today. This is the real archive.
+- **Mac stunted** — 134 sources, **0 extractions ever** (backfill never bootstrapped locally). Do the export from Hezza's DB, not Mac's.
 
-| Layer | Timescale | What | Where |
-|-------|-----------|------|-------|
-| Live context | This session | Full conversation, tools, files | CC context window (lost at /exit) |
-| Raw text (L1) | Hours–days | Searchable full conversations | Garde: claude_code source type + FTS5 |
-| Handoffs (L2) | Next session | Tactical baton — gotchas, next steps | .bon/handoffs/ (git) |
-| understanding.md (L3) | Days–weeks | Project soul, design values | .bon/ (git), synthesized at /open |
-| MEMORY.md (L4) | Weeks–months | Typed observations | ~/.claude/ (Anthropic's autoDream) |
-| Garde extractions (L5) | Months–forever | Searchable semantic archive | Garde DB — filled by handoff parse + composting |
-| Bon items | Cross-session | Work state | .bon/ (orthogonal to knowledge stack) |
+**The data model (for reading the DB out).** Sources are the index (composite `source_id` like `claude_code:uuid`). Summaries hold pre-parsed summaries + raw text + FTS5. Extractions are the LLM/handoff-parse semantic layer (summary, builds, learnings, friction, patterns, open_threads). The 106 off-disk sessions live in sources+summaries — their JSONLs are gone, so the DB text is the only copy.
 
-Garde's primary role is L1 (raw text search) and L5 (structured extractions). L1 is immediate utility — "find that session." L5 is accumulated wisdom — "what did we learn." Both are consumed primarily by future Claudes (86% of searches are Claude-initiated).
+**Recovery is not server-side.** The lost session tranches are *not* recoverable from Anthropic's servers (local CC transcripts have no user-facing read path; only the 117 claude.ai web chats are listable). The DB is genuinely the ark.
 
-**L1 quality improved (Apr 2026):** The claude_code adapter now uses deglacer for `full_text()` — compaction-aware, dedup, system tag stripping. 135 sessions showed >20% text improvement; compacted sessions saw up to 95% noise reduction. The gap that remains: existing indexed sessions have stale FTS text from the old parser. Re-indexing all claude_code sources with the new `full_text()` is tracked in bon-mesezu.
+## Landmines still live
 
-The risk isn't "too many layers" — it's drift between them, and quality gaps within layers.
-
-## Landmines
-
-**`--limit 0` means zero, not unlimited.** In backfill/populate commands, `--limit 0` is SQL `LIMIT 0` (returns nothing). Use `--limit 10000` for "all."
-
-**`ingest-session` is the indexing boundary.** It indexes the source + summary, nothing more. Extraction happens elsewhere: handoff scan (section parse, free) or backfill (LLM, fallback). The staged extraction pipeline was removed in Apr 2026 — don't re-add it.
-
-**Fork bomb prevention is non-negotiable.** `_call_claude()` sets `GARDE_SUBAGENT=1`. Session-start hooks must check this and exit early. Removing this guard creates exponential subprocess spawning.
-
-**`uv tool install` caches stale binaries.** After changing adapter code or CLI, the installed `garde` binary won't reflect changes until `uv tool install --reinstall`. The cron uses the installed binary, not `uv run` — so code changes don't take effect in cron until reinstall.
-
-**FTS5 rebuild is manual after bulk imports.** INSERT OR IGNORE into the extractions table doesn't update the FTS index. Must run `INSERT INTO summaries_fts(summaries_fts) VALUES('rebuild')` after importing extraction data from another machine's database.
-
-**Mac and tube have 2,349 duplicate JSONL files.** Same session UUIDs exist under both `-Users-modha-*` and `-home-modha-*` paths due to claude-config syncing. Garde deduplicates by source_id at index time (only 103 Mac-only sessions were genuinely new), but the duplicate files waste ~1.9 GB on disk.
-
-## Garde's role in the fond architecture (Apr 2026)
-
-Fond is the architecture for how knowledge flows from sessions to durable memory. Bon owns the lifecycle (open/close/compost). Garde is the larder — it stores what the kitchen produces.
-
-- **Bon's composting** (scripts/compost.sh, planned) calls garde's handoff adapter to produce extractions, then stores them in garde's DB
-- **Garde's scan** indexes sources across 8 types and runs handoff section parse for extraction
-- **Garde's backfill** is the fallback for unclosed sessions — expensive but necessary for coverage
-- **Garde's search/MCP** is how future Claudes query across all sessions
-
-The interface between bon and garde is the handoff adapter: `HandoffSource.to_extraction()`. Built in bds-kevapu (Apr 2026).
-
-## Current state (Apr 2026)
-
-8,723 sources on hezza: 5,628 claude_code, 1,663 handoffs, 1,357 bon, 75 amp. 179 handoffs now have free section-parse extractions. Backfill cron handles the rest (200/day). Dolt migration spiked and queued (bon-forebi) — schema maps cleanly, deferred pending fond stabilisation.
-
-**Structured extraction search (bon-cutora, Apr 2026):** Planned feature to use SQLite's `json_each()` to search within extraction JSON arrays (builds, learnings, friction, patterns, open_threads) at the SQL level rather than fetching blobs and parsing in Python. Two modes: `--in` flag filters FTS results to sessions with matching extraction entries, `--show-matches` returns individual matching entries across sessions. No new tables or migrations — pure query-time capability over existing data. Materialized tables and virtual tables were evaluated and deferred as premature at current scale (~7K extractions).
+- **`--limit 0` means SQL `LIMIT 0` (returns nothing), not "unlimited."** Use `--limit 10000`.
+- **Fork-bomb guard is non-negotiable while garde still runs.** `_call_claude()` sets `GARDE_SUBAGENT=1`; hooks check it and exit early. Don't remove until gm-pamadu turns the engines off.
+- **`uv tool install` caches stale binaries** — cron uses the installed binary, not `uv run`. Reinstall after code changes (relevant if gm-kenave touches CLI before teardown).
+- **bon here uses the Dolt backend** (`dolt-bon.service` on hezza), so bon items are directory-independent — which is why gm-kudasu survived the repo move. If `bon` fails with "Cannot connect," start the service on hezza.
+- **Crumb:** `dotfiles/UPGRADING.md` lines 68-69 still cite `~/Repos/batterie` paths (cosmetic, fix-on-contact).
