@@ -1,5 +1,7 @@
 # Garde-manger — Understanding
 
+> **⚠️ DECOMMISSIONING (2026-06-03).** This document describes garde as a *living* system — that picture is being retired. We decided to **decommission garde** and fold its function into `~/notes` (clean finished sessions → `notes/raw/` via deglacer; search becomes Claude+grep; cross-machine via *notes'* Syncthing — **not** by syncing this repo). Plan: **gm-kudasu** + 7 actions; start at **gm-gumopi**. See the latest `.bon/handoffs/`. **Do not delete the DB** — it is the sole surviving copy of 106 off-disk sessions until the notes export is verified. The Dolt / multi-machine "future" described below is superseded.
+
 The larder. Persistent, searchable memory across Claude sessions. FTS5 search over session summaries, structured extractions (builds, learnings, friction, patterns), and raw conversation text. Part of the kitchen brigade: garde-manger is the cold station — indexing, storage, retrieval. It does not make the stock; it stores what the kitchen produces.
 
 ## The data model
