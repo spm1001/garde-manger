@@ -1,10 +1,10 @@
 # Garde-manger — Understanding
 
-> **Status: decommissioning (decided 2026-06-03).** garde is being retired. Its function — clean finished sessions → keep → find — folds into `~/notes`. This document is now a *teardown map*, not a portrait of a living system. The plan is **gm-kudasu** + 7 ordered actions; start at **gm-gumopi**. **Do not delete the DB** until the notes export is verified on both machines — it is the sole surviving copy of 106 off-disk sessions.
+> **Status: decommissioning (decided 2026-06-03).** garde is being retired. Its function — clean finished sessions → keep → find — folds into `~/notes`. This document is now a *teardown map*, not a portrait of a living system. The plan is **gm-kudasu** + 7 ordered actions; **gm-gumopi** (format) and **gm-firaso** (capture predicate + AMP + tier) are done — next is **gm-kenave** (the live hook). **Do not delete the DB** until the notes export is verified on both machines — it is the sole surviving copy of 106 off-disk sessions.
 
 ## The decision, in one breath
 
-garde-the-database is over-built for its actual job. The job was only ever "clean finished sessions and make them findable." Measuring the payload collapsed the edifice: deglacer compresses raw CC JSONL ~74× (4.9 GB → 67 MB), the real corpus is ~1,300 substantial sessions / **~41 MB** of deglacer-clean text, and the 692 MB DB is ~10× FTS-index bloat over that. deglacer is now a shared library, so it survives garde. `~/notes` already solves cross-machine (Syncthing) and is building a raw→digest→promote pipeline (`notes-sobute`) whose cleaning step *is* deglacer.
+garde-the-database is over-built for its actual job. The job was only ever "clean finished sessions and make them findable." Measuring the payload collapsed the edifice: deglacer compresses raw CC JSONL ~74× (4.9 GB → 67 MB), and the real corpus is ~2,267 substantial CC sessions / **~61 MB** of deglacer-clean text — measured by a full deglacer pass over all 5,948 non-agent on-disk sessions (2026-06-03, `gm-firaso`); the earlier ~1,300 / 41 MB estimate predated the corpus growth from the `cleanupPeriodDays=99999` retention bump. Add 42 amp threads (~33 MB, Source C) + ~106 DB-only orphans, and the 692 MB DB is mostly FTS-index bloat over that. deglacer is now a shared library, so it survives garde. `~/notes` already solves cross-machine (Syncthing) and is building a raw→digest→promote pipeline (`notes-sobute`) whose cleaning step *is* deglacer.
 
 So: **retire garde-the-DB, keep garde-the-idea inside notes.** The corpus folds into `notes/raw/`. Search becomes Claude+grep over that folder — at 41 MB, a Claude with grep out-searches BM25 because it *judges* relevance rather than just ranking it. No database needed.
 
@@ -17,14 +17,14 @@ Strict sequence; each step's reason is the gate on the next.
 | 0 | **gm-gumopi** | Pin archive format (foldering / dating / frontmatter) + decommission done-criteria | Everything below writes into this format — decide it first |
 | 1 | **gm-firaso** | Tune capture criteria + decide AMP in or out | Sets what the corpus *contains* before we build it |
 | 2 | **gm-kenave** | Wire + **live-verify** the new `/close` → deglacer → notes hook | The replacement capture path; must be proven live before any teardown |
-| 3 | **gm-jewode** | Build the canonical historical corpus into `notes/raw/` — garde's one last parse, incl. the 106-session ark | The actual preservation; depends on the format + capture rules above |
+| 3 | **gm-jewode** | Build the canonical historical corpus into `notes/raw/` — garde's one last parse, incl. the 106-session ark + 42 amp threads (Source C) | The actual preservation; depends on the format + capture rules above |
 | 4 | **gm-jerapu** | Pass the verify-before-burn gate | Proves the export is complete + grep-findable on both machines before anything is destroyed |
 | 5 | **gm-damoku** | Repoint garde's consumers (memory skill, hooks, cron, `garde search`) off the dying tool | Nothing should still call garde when the engines go off |
 | 6 | **gm-pamadu** | Engines off, DB cold-backed-up, repo archived | The end — only after 2–5 are green |
 
 **Done when** (canonical: `gm-kudasu --done`): Mac greps a 6-month-old session with Hezza unreachable; the next real `/close` drops a fresh dated markdown into `notes/raw/` that Syncs to Mac; nothing references garde (memory skill, hooks, cron, `garde search` all repointed or retired); the 106 off-disk sessions are confirmed present in notes; the DB is retired to a cold backup (**not deleted**); the repo is archived on GitHub.
 
-**Archive format** is pinned (`gm-gumopi`, 2026-06-03): flat files in `notes/raw/claude/code/`, kebab filenames `YYYY-MM-DD-HHMM-<slug>-<uuid8>.md`, frontmatter = converter fields + `machine` + `tier`. Full spec lives where the converters do: `~/notes/raw/claude/_converters/ARCHIVE-FORMAT.md`.
+**Archive format + capture predicate** are pinned (`gm-gumopi` + `gm-firaso`, 2026-06-03): flat files in `notes/raw/claude/code/`, kebab filenames `YYYY-MM-DD-HHMM-<slug>-<uuid8>.md`, frontmatter = converter fields + `machine` (the `tier` field was **dropped** — under one uniform filter everything kept is substantial, so the tag was redundant). The **capture predicate** — `real-/close OR conv≥3000 OR (turns≥8 AND conv≥800)`, excluding `agent-*` subagents and ~450 tmux-labeler automation sessions, applied uniformly to old + new — and the **AMP-in decision** (preserve 42 substantial threads via the amp adapter, tail-end) live in the full spec: `~/notes/raw/claude/_converters/ARCHIVE-FORMAT.md`.
 
 ## Three risks that shape the order
 
